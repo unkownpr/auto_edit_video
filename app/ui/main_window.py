@@ -1704,14 +1704,16 @@ class MainWindow(QMainWindow):
                     segment_files.append(segment_path)
 
                     # Use FFmpeg to extract segment
-                    # -ss before -i for fast seeking, then -t for duration
+                    # -ss after -i for frame-accurate seeking (slower but precise)
+                    segment_duration = end - start
+                    logger.info(f"Extracting segment {i+1}: {start:.3f}s to {end:.3f}s (duration: {segment_duration:.3f}s)")
+
                     cmd = [
                         ffmpeg.ffmpeg_path,
                         "-y",
-                        "-ss", str(start),
                         "-i", str(media.file_path),
-                        "-t", str(end - start),
-                        "-map", "0",  # Include ALL streams (video + audio)
+                        "-ss", str(start),
+                        "-t", str(segment_duration),
                         "-c", "copy",
                         "-avoid_negative_ts", "make_zero",
                         str(segment_path)
@@ -1730,11 +1732,18 @@ class MainWindow(QMainWindow):
 
                 progress_callback(80, tr("render_merging"))
 
-                # Verify all segments exist
-                for seg_path in segment_files:
+                # Verify all segments exist and log their info
+                total_segment_size = 0
+                for idx, seg_path in enumerate(segment_files):
                     if not seg_path.exists():
                         raise RuntimeError(f"Segment file missing: {seg_path}")
-                    logger.info(f"Segment ready: {seg_path.name} ({seg_path.stat().st_size} bytes)")
+                    seg_size = seg_path.stat().st_size
+                    total_segment_size += seg_size
+                    expected_start, expected_end = segments[idx]
+                    logger.info(f"Segment {idx+1}: {seg_path.name} "
+                               f"(size: {seg_size/1024:.1f}KB, expected: {expected_start:.2f}s-{expected_end:.2f}s)")
+
+                logger.info(f"Total segments: {len(segment_files)}, Total size: {total_segment_size/1024/1024:.2f}MB")
 
                 # Create concat file with only our session's segments
                 logger.info(f"Creating concat file: {concat_file}")
@@ -1751,14 +1760,13 @@ class MainWindow(QMainWindow):
                     logger.info(f"Deleting existing output: {output_path}")
                     output_path.unlink()
 
-                # Concatenate segments
+                # Concatenate segments - simple copy without re-mapping
                 cmd = [
                     ffmpeg.ffmpeg_path,
                     "-y",
                     "-f", "concat",
                     "-safe", "0",
                     "-i", str(concat_file),
-                    "-map", "0",  # Include ALL streams
                     "-c", "copy",
                     str(output_path)
                 ]
@@ -1777,7 +1785,14 @@ class MainWindow(QMainWindow):
                 # Verify output
                 if output_path.exists():
                     output_size = output_path.stat().st_size
-                    logger.info(f"Output created: {output_path} ({output_size} bytes)")
+                    size_ratio = output_size / total_segment_size if total_segment_size > 0 else 0
+                    logger.info(f"Output created: {output_path}")
+                    logger.info(f"  Output size: {output_size/1024/1024:.2f}MB")
+                    logger.info(f"  Segments total: {total_segment_size/1024/1024:.2f}MB")
+                    logger.info(f"  Size ratio: {size_ratio:.2f}x (should be ~1.0)")
+
+                    if size_ratio > 1.5:
+                        logger.warning(f"WARNING: Output is {size_ratio:.1f}x larger than segments - possible duplication!")
                 else:
                     raise RuntimeError("Output file was not created")
 
