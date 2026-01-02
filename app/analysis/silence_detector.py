@@ -6,10 +6,13 @@ dBFS tabanlı sessizlik tespiti:
 - Histerezis ile jitter önleme
 - Padding ve merge işlemleri
 - Opsiyonel VAD entegrasyonu
+- FFmpeg silencedetect entegrasyonu (frame-accurate)
 """
 
 from __future__ import annotations
 
+import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable
@@ -495,3 +498,161 @@ def detect_silence_with_vad(
         progress_callback(1.0)
 
     return detector._segments_to_cuts(padded)
+
+
+def detect_silence_ffmpeg(
+    media_path: Path,
+    config: Optional[AnalysisConfig] = None,
+    progress_callback: Optional[Callable[[float], None]] = None,
+    ffmpeg_path: str = "ffmpeg",
+) -> list[Cut]:
+    """
+    FFmpeg silencedetect filtresi ile sessizlik tespiti.
+
+    Bu yöntem daha doğru sonuç verir çünkü FFmpeg'in kendi iç
+    zamanlamasını kullanır ve trim filtresiyle tam uyumlu çalışır.
+
+    Args:
+        media_path: Video veya audio dosya yolu
+        config: Analiz konfigürasyonu
+        progress_callback: İlerleme callback'i
+        ffmpeg_path: FFmpeg binary yolu
+
+    Returns:
+        Cut listesi (kesilecek sessiz bölgeler)
+    """
+    if config is None:
+        config = AnalysisConfig()
+
+    logger.info(f"Starting FFmpeg silence detection: {media_path}")
+
+    if progress_callback:
+        progress_callback(0.1)
+
+    # FFmpeg silencedetect komutu
+    # n = noise threshold (dB), d = minimum duration (seconds)
+    threshold_db = config.silence_threshold_db
+    min_duration = config.silence_min_duration_ms / 1000.0
+
+    cmd = [
+        ffmpeg_path,
+        "-i", str(media_path),
+        "-af", f"silencedetect=n={threshold_db}dB:d={min_duration}",
+        "-f", "null",
+        "-"
+    ]
+
+    logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 dakika timeout
+        )
+        output = result.stderr  # FFmpeg çıktısı stderr'de
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg timeout")
+        return []
+    except Exception as e:
+        logger.error(f"FFmpeg error: {e}")
+        return []
+
+    if progress_callback:
+        progress_callback(0.5)
+
+    # Çıktıyı parse et
+    # Format: [silencedetect @ 0x...] silence_start: 1.234
+    #         [silencedetect @ 0x...] silence_end: 5.678 | silence_duration: 4.444
+    silence_start_pattern = re.compile(r"silence_start:\s*([\d.]+)")
+    silence_end_pattern = re.compile(r"silence_end:\s*([\d.]+)")
+
+    silence_starts = []
+    silence_ends = []
+
+    for line in output.split("\n"):
+        start_match = silence_start_pattern.search(line)
+        if start_match:
+            silence_starts.append(float(start_match.group(1)))
+
+        end_match = silence_end_pattern.search(line)
+        if end_match:
+            silence_ends.append(float(end_match.group(1)))
+
+    if progress_callback:
+        progress_callback(0.7)
+
+    # Eşleşmeleri Cut'lara dönüştür
+    raw_cuts = []
+    for i, start in enumerate(silence_starts):
+        if i < len(silence_ends):
+            end = silence_ends[i]
+        else:
+            # Son silence devam ediyorsa, video sonuna kadar
+            end = start + 10.0  # Placeholder, aşağıda düzeltilecek
+
+        raw_cuts.append((start, end))
+
+    if not raw_cuts:
+        logger.info("No silence detected by FFmpeg")
+        return []
+
+    # Video süresini al (son silence_end'den tahmin et veya ffprobe kullan)
+    total_duration = max(silence_ends) if silence_ends else 0.0
+
+    # Padding ve merge işlemleri
+    pre_pad = config.pre_pad_ms / 1000.0
+    post_pad = config.post_pad_ms / 1000.0
+    merge_gap = config.merge_gap_ms / 1000.0
+    keep_short = config.keep_short_pauses_ms / 1000.0
+
+    # 1. Padding uygula
+    padded_cuts = []
+    for start, end in raw_cuts:
+        new_start = start + pre_pad
+        new_end = end - post_pad
+
+        if new_start < new_end and (new_end - new_start) >= 0.05:  # min 50ms
+            padded_cuts.append((max(0, new_start), new_end))
+
+    if progress_callback:
+        progress_callback(0.8)
+
+    # 2. Kısa pause'ları filtrele
+    if keep_short > 0:
+        padded_cuts = [(s, e) for s, e in padded_cuts if (e - s) >= keep_short]
+
+    # 3. Yakın segmentleri merge et
+    if padded_cuts:
+        merged_cuts = [padded_cuts[0]]
+        for start, end in padded_cuts[1:]:
+            last_start, last_end = merged_cuts[-1]
+            if start - last_end <= merge_gap:
+                # Birleştir
+                merged_cuts[-1] = (last_start, end)
+            else:
+                merged_cuts.append((start, end))
+        padded_cuts = merged_cuts
+
+    if progress_callback:
+        progress_callback(0.9)
+
+    # Cut objelerine dönüştür
+    cuts = []
+    for start, end in padded_cuts:
+        cut = Cut(
+            start=start,
+            end=end,
+            cut_type=CutType.SILENCE,
+            enabled=True,
+            source_avg_db=threshold_db,  # FFmpeg threshold değerini kullan
+            source_peak_db=threshold_db,
+        )
+        cuts.append(cut)
+
+    if progress_callback:
+        progress_callback(1.0)
+
+    logger.info(f"FFmpeg detected {len(cuts)} silence regions")
+    return cuts

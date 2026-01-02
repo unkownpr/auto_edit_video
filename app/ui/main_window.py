@@ -59,7 +59,7 @@ from app.core.settings import Settings, Preset, DEFAULT_PRESETS
 from app.core.i18n import tr, set_language, get_language, detect_system_language
 from app.media.ffmpeg import probe_media, extract_audio, FFmpegError, FFmpegNotFoundError
 from app.media.waveform import WaveformGenerator, WaveformData
-from app.analysis.silence_detector import detect_silence
+from app.analysis.silence_detector import detect_silence, detect_silence_ffmpeg
 from app.export.fcpxml import export_fcpxml
 from app.export.edl import export_edl
 from app.export.premiere_xml import export_premiere_xml
@@ -305,34 +305,41 @@ class MainWindow(QMainWindow):
 
         self.threshold_spin = QDoubleSpinBox()
         self.threshold_spin.setRange(-60, -10)
-        self.threshold_spin.setValue(-35)
+        self.threshold_spin.setValue(-30)  # Updated default (less aggressive)
         self.threshold_spin.setSuffix(" dB")
         self.threshold_spin.setDecimals(1)
         settings_layout.addRow(tr("threshold") + ":", self.threshold_spin)
 
         self.min_duration_spin = QSpinBox()
         self.min_duration_spin.setRange(50, 2000)
-        self.min_duration_spin.setValue(250)
+        self.min_duration_spin.setValue(500)  # Updated default (0.5s)
         self.min_duration_spin.setSuffix(" ms")
         settings_layout.addRow(tr("min_duration") + ":", self.min_duration_spin)
 
         self.pre_pad_spin = QSpinBox()
         self.pre_pad_spin.setRange(0, 500)
-        self.pre_pad_spin.setValue(80)
+        self.pre_pad_spin.setValue(100)  # Updated default
         self.pre_pad_spin.setSuffix(" ms")
         settings_layout.addRow(tr("pre_padding") + ":", self.pre_pad_spin)
 
         self.post_pad_spin = QSpinBox()
         self.post_pad_spin.setRange(0, 500)
-        self.post_pad_spin.setValue(120)
+        self.post_pad_spin.setValue(150)  # Updated default
         self.post_pad_spin.setSuffix(" ms")
         settings_layout.addRow(tr("post_padding") + ":", self.post_pad_spin)
 
         self.merge_gap_spin = QSpinBox()
-        self.merge_gap_spin.setRange(0, 500)
-        self.merge_gap_spin.setValue(120)
+        self.merge_gap_spin.setRange(0, 1000)
+        self.merge_gap_spin.setValue(300)  # Updated default
         self.merge_gap_spin.setSuffix(" ms")
         settings_layout.addRow(tr("merge_gap") + ":", self.merge_gap_spin)
+
+        self.keep_short_spin = QSpinBox()
+        self.keep_short_spin.setRange(0, 500)
+        self.keep_short_spin.setValue(150)  # Preserve natural pauses
+        self.keep_short_spin.setSuffix(" ms")
+        self.keep_short_spin.setToolTip(tr("keep_short_tooltip"))
+        settings_layout.addRow(tr("keep_short_pauses") + ":", self.keep_short_spin)
 
         self.vad_check = QCheckBox(tr("use_vad"))
         settings_layout.addRow(self.vad_check)
@@ -1081,9 +1088,6 @@ class MainWindow(QMainWindow):
             return
 
         media = self.project.media_info
-        if not media.audio_path or not media.audio_path.exists():
-            QMessageBox.warning(self, tr("dialog_warning"), tr("error_no_audio"))
-            return
 
         config = AnalysisConfig(
             silence_threshold_db=self.threshold_spin.value(),
@@ -1091,6 +1095,7 @@ class MainWindow(QMainWindow):
             pre_pad_ms=self.pre_pad_spin.value(),
             post_pad_ms=self.post_pad_spin.value(),
             merge_gap_ms=self.merge_gap_spin.value(),
+            keep_short_pauses_ms=self.keep_short_spin.value(),
             use_vad=self.vad_check.isChecked(),
         )
         self.project.config = config
@@ -1098,11 +1103,28 @@ class MainWindow(QMainWindow):
         self._show_progress_dialog(tr("progress_analyzing"), tr("btn_cancel"))
 
         def do_work(progress_callback):
-            return detect_silence(
-                media.audio_path,
-                config,
-                lambda p: progress_callback(int(p * 100), tr("progress_analyzing")),
-            )
+            from app.media.ffmpeg import FFmpegWrapper
+
+            # FFmpeg silencedetect kullan (daha doğru, frame-accurate)
+            try:
+                ffmpeg = FFmpegWrapper()
+                logger.info("Using FFmpeg silencedetect for frame-accurate detection")
+                return detect_silence_ffmpeg(
+                    media.file_path,
+                    config,
+                    lambda p: progress_callback(int(p * 100), tr("progress_analyzing")),
+                    ffmpeg_path=ffmpeg.ffmpeg_path,
+                )
+            except Exception as e:
+                # Fallback: numpy-based detection
+                logger.warning(f"FFmpeg silencedetect failed, falling back to numpy: {e}")
+                if not media.audio_path or not media.audio_path.exists():
+                    raise ValueError(tr("error_no_audio"))
+                return detect_silence(
+                    media.audio_path,
+                    config,
+                    lambda p: progress_callback(int(p * 100), tr("progress_analyzing")),
+                )
 
         def on_complete(cuts):
             logger.info(f"=== on_complete callback START ===")

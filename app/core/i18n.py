@@ -65,6 +65,8 @@ TRANSLATIONS = {
         "pre_padding": "Pre Padding",
         "post_padding": "Post Padding",
         "merge_gap": "Merge Gap",
+        "keep_short_pauses": "Keep Short Pauses",
+        "keep_short_tooltip": "Preserve natural speech pauses shorter than this value",
         "use_vad": "Use Voice Activity Detection",
         "breath_detection": "Detect Breaths",
 
@@ -260,6 +262,8 @@ TRANSLATIONS = {
         "pre_padding": "Ön Boşluk",
         "post_padding": "Son Boşluk",
         "merge_gap": "Birleştirme Aralığı",
+        "keep_short_pauses": "Kısa Duraklamaları Koru",
+        "keep_short_tooltip": "Bu değerden kısa doğal konuşma duraklamalarını koru",
         "use_vad": "Ses Aktivite Tespiti Kullan",
         "breath_detection": "Nefes Tespiti",
 
