@@ -1,5 +1,5 @@
 """
-OpenCV-based video player widget.
+OpenCV-based video player widget with threaded frame reading.
 
 Embedded video playback without Qt Multimedia (which crashes on macOS).
 """
@@ -9,10 +9,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Optional, List
+from threading import Thread, Lock
+from queue import Queue, Empty
+import time
+
 import cv2
 import numpy as np
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QObject
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QFrame
 from PySide6.QtGui import QImage, QPixmap
 
@@ -21,9 +25,125 @@ from app.core.models import Cut
 logger = logging.getLogger(__name__)
 
 
+class FrameReader(QObject):
+    """Background thread for reading video frames."""
+
+    frame_ready = Signal(np.ndarray, int)  # frame, frame_number
+
+    def __init__(self):
+        super().__init__()
+        self._capture: Optional[cv2.VideoCapture] = None
+        self._running = False
+        self._thread: Optional[Thread] = None
+        self._lock = Lock()
+        self._seek_frame: Optional[int] = None
+        self._playing = False
+        self._fps = 30.0
+        self._frame_count = 0
+        self._current_frame = 0
+
+    def open(self, path: str) -> bool:
+        """Open video file."""
+        with self._lock:
+            if self._capture is not None:
+                self._capture.release()
+
+            self._capture = cv2.VideoCapture(path)
+            if not self._capture.isOpened():
+                return False
+
+            self._fps = self._capture.get(cv2.CAP_PROP_FPS) or 30.0
+            self._frame_count = int(self._capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            self._current_frame = 0
+            return True
+
+    def start_thread(self):
+        """Start the reader thread."""
+        if self._thread is not None and self._thread.is_alive():
+            return
+
+        self._running = True
+        self._thread = Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop_thread(self):
+        """Stop the reader thread."""
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+
+    def play(self):
+        """Start playback."""
+        self._playing = True
+
+    def pause(self):
+        """Pause playback."""
+        self._playing = False
+
+    def seek(self, frame_num: int):
+        """Request seek to frame."""
+        self._seek_frame = frame_num
+
+    def _run(self):
+        """Main reader loop."""
+        frame_interval = 1.0 / self._fps
+        last_frame_time = 0
+
+        while self._running:
+            # Check for seek request
+            with self._lock:
+                if self._seek_frame is not None:
+                    target = self._seek_frame
+                    self._seek_frame = None
+                    if self._capture is not None:
+                        self._capture.set(cv2.CAP_PROP_POS_FRAMES, target)
+                        ret, frame = self._capture.read()
+                        if ret:
+                            self._current_frame = target
+                            self.frame_ready.emit(frame.copy(), target)
+                    continue
+
+            # If playing, read next frame at appropriate rate
+            if self._playing:
+                current_time = time.time()
+                if current_time - last_frame_time >= frame_interval:
+                    with self._lock:
+                        if self._capture is not None:
+                            ret, frame = self._capture.read()
+                            if ret:
+                                self._current_frame += 1
+                                self.frame_ready.emit(frame.copy(), self._current_frame)
+                                last_frame_time = current_time
+                            else:
+                                self._playing = False
+            else:
+                time.sleep(0.01)  # Small sleep when not playing
+
+    def close(self):
+        """Close video and stop thread."""
+        self.stop_thread()
+        with self._lock:
+            if self._capture is not None:
+                self._capture.release()
+                self._capture = None
+
+    @property
+    def fps(self) -> float:
+        return self._fps
+
+    @property
+    def frame_count(self) -> int:
+        return self._frame_count
+
+    @property
+    def current_frame(self) -> int:
+        return self._current_frame
+
+
 class VideoPlayer(QWidget):
     """
-    OpenCV-based video player widget.
+    OpenCV-based video player widget with threaded frame reading.
 
     Signals:
         position_changed(float): Current position in seconds
@@ -41,18 +161,14 @@ class VideoPlayer(QWidget):
         super().__init__(parent)
 
         self._video_path: Optional[Path] = None
-        self._capture: Optional[cv2.VideoCapture] = None
-        self._fps: float = 30.0
+        self._frame_reader = FrameReader()
+        self._frame_reader.frame_ready.connect(self._on_frame_ready)
+
         self._duration: float = 0.0
-        self._frame_count: int = 0
-        self._current_frame: int = 0
         self._is_playing: bool = False
         self._cuts: List[Cut] = []
         self._skip_cuts: bool = True
-
-        # Playback timer
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._on_timer)
+        self._slider_pressed = False
 
         self._setup_ui()
 
@@ -98,7 +214,7 @@ class VideoPlayer(QWidget):
 
         # Play button
         self._play_btn = QPushButton("▶ Oynat")
-        self._play_btn.setFixedWidth(80)
+        self._play_btn.setFixedWidth(100)
         self._play_btn.clicked.connect(self.toggle_playback)
         btn_layout.addWidget(self._play_btn)
 
@@ -117,47 +233,34 @@ class VideoPlayer(QWidget):
 
         btn_layout.addStretch()
 
-        # Frame step buttons
-        self._prev_frame_btn = QPushButton("⏮")
-        self._prev_frame_btn.setFixedWidth(40)
-        self._prev_frame_btn.clicked.connect(self.prev_frame)
-        btn_layout.addWidget(self._prev_frame_btn)
-
-        self._next_frame_btn = QPushButton("⏭")
-        self._next_frame_btn.setFixedWidth(40)
-        self._next_frame_btn.clicked.connect(self.next_frame)
-        btn_layout.addWidget(self._next_frame_btn)
-
         controls_layout.addLayout(btn_layout)
         layout.addWidget(controls)
 
     def load_video(self, path: Path) -> bool:
         """Load a video file."""
         self.stop()
-
-        if self._capture is not None:
-            self._capture.release()
+        self._frame_reader.close()
 
         self._video_path = path
-        self._capture = cv2.VideoCapture(str(path))
 
-        if not self._capture.isOpened():
+        if not self._frame_reader.open(str(path)):
             logger.error(f"Failed to open video: {path}")
             self._video_label.setText(f"Video açılamadı: {path.name}")
             return False
 
-        self._fps = self._capture.get(cv2.CAP_PROP_FPS) or 30.0
-        self._frame_count = int(self._capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        self._duration = self._frame_count / self._fps
-        self._current_frame = 0
+        self._duration = self._frame_reader.frame_count / self._frame_reader.fps
 
-        logger.info(f"Loaded video: {path.name}, {self._fps:.2f} fps, {self._duration:.2f}s, {self._frame_count} frames")
+        logger.info(f"Loaded video: {path.name}, {self._frame_reader.fps:.2f} fps, "
+                   f"{self._duration:.2f}s, {self._frame_reader.frame_count} frames")
 
         self.duration_changed.emit(self._duration)
         self._update_time_label()
 
+        # Start frame reader thread
+        self._frame_reader.start_thread()
+
         # Show first frame
-        self._show_frame(0)
+        self._frame_reader.seek(0)
 
         return True
 
@@ -176,19 +279,18 @@ class VideoPlayer(QWidget):
 
     def play(self):
         """Start playback."""
-        if self._capture is None or not self._capture.isOpened():
+        if self._frame_reader.frame_count == 0:
             return
 
         self._is_playing = True
-        interval = int(1000 / self._fps)
-        self._timer.start(interval)
+        self._frame_reader.play()
         self._play_btn.setText("⏸ Duraklat")
         self.playback_started.emit()
 
     def pause(self):
         """Pause playback."""
         self._is_playing = False
-        self._timer.stop()
+        self._frame_reader.pause()
         self._play_btn.setText("▶ Oynat")
         self.playback_paused.emit()
 
@@ -206,70 +308,75 @@ class VideoPlayer(QWidget):
 
     def seek(self, time_sec: float):
         """Seek to a specific time in seconds."""
-        if self._capture is None:
+        if self._frame_reader.frame_count == 0:
             return
 
-        frame = int(time_sec * self._fps)
-        frame = max(0, min(frame, self._frame_count - 1))
-        self._show_frame(frame)
+        frame = int(time_sec * self._frame_reader.fps)
+        frame = max(0, min(frame, self._frame_reader.frame_count - 1))
+        self._frame_reader.seek(frame)
 
-    def seek_frame(self, frame: int):
-        """Seek to a specific frame number."""
-        if self._capture is None:
-            return
+    @Slot(np.ndarray, int)
+    def _on_frame_ready(self, frame: np.ndarray, frame_num: int):
+        """Handle frame from reader thread."""
+        # Check if we need to skip a cut region
+        if self._is_playing and self._skip_cuts and self._cuts:
+            current_time = frame_num / self._frame_reader.fps
+            for cut in self._cuts:
+                if cut.enabled and cut.start <= current_time < cut.end:
+                    # Skip to end of cut
+                    skip_frame = int(cut.end * self._frame_reader.fps) + 1
+                    logger.debug(f"Skipping cut: {cut.start:.2f}s - {cut.end:.2f}s")
+                    self._frame_reader.seek(skip_frame)
+                    return
 
-        frame = max(0, min(frame, self._frame_count - 1))
-        self._show_frame(frame)
-
-    def next_frame(self):
-        """Go to next frame."""
-        self.seek_frame(self._current_frame + 1)
-
-    def prev_frame(self):
-        """Go to previous frame."""
-        self.seek_frame(self._current_frame - 1)
-
-    def _show_frame(self, frame_num: int):
-        """Display a specific frame."""
-        if self._capture is None:
-            return
-
-        self._capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-        ret, frame = self._capture.read()
-
-        if not ret:
-            logger.debug(f"Failed to read frame {frame_num}")
-            return
-
-        self._current_frame = frame_num
+        # Display the frame
         self._display_frame(frame)
-        self._update_time_label()
-        self._update_slider()
+        self._update_time_label_for_frame(frame_num)
 
-        current_time = frame_num / self._fps
+        if not self._slider_pressed:
+            self._update_slider(frame_num)
+
+        current_time = frame_num / self._frame_reader.fps
         self.position_changed.emit(current_time)
+
+        # Check if reached end
+        if frame_num >= self._frame_reader.frame_count - 1:
+            self.pause()
 
     def _display_frame(self, frame: np.ndarray):
         """Convert and display a frame."""
-        # Convert BGR to RGB
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        try:
+            # Convert BGR to RGB
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        h, w, ch = frame_rgb.shape
-        bytes_per_line = ch * w
+            h, w, ch = frame_rgb.shape
+            bytes_per_line = ch * w
 
-        # Create QImage
-        q_img = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+            # Create QImage
+            q_img = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
 
-        # Scale to fit label while maintaining aspect ratio
-        label_size = self._video_label.size()
-        pixmap = QPixmap.fromImage(q_img)
-        scaled_pixmap = pixmap.scaled(label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            # Scale to fit label while maintaining aspect ratio
+            label_size = self._video_label.size()
+            pixmap = QPixmap.fromImage(q_img)
+            scaled_pixmap = pixmap.scaled(label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
-        self._video_label.setPixmap(scaled_pixmap)
+            self._video_label.setPixmap(scaled_pixmap)
+        except Exception as e:
+            logger.error(f"Error displaying frame: {e}")
 
     def _update_time_label(self):
         """Update the time display."""
-        current = self._current_frame / self._fps if self._fps > 0 else 0
+        current = self._frame_reader.current_frame / self._frame_reader.fps if self._frame_reader.fps > 0 else 0
+        total = self._duration
+
+        current_str = self._format_time(current)
+        total_str = self._format_time(total)
+
+        self._time_label.setText(f"{current_str} / {total_str}")
+
+    def _update_time_label_for_frame(self, frame_num: int):
+        """Update time label for specific frame."""
+        current = frame_num / self._frame_reader.fps if self._frame_reader.fps > 0 else 0
         total = self._duration
 
         current_str = self._format_time(current)
@@ -284,53 +391,32 @@ class VideoPlayer(QWidget):
         s = int(seconds % 60)
         return f"{h:02d}:{m:02d}:{s:02d}"
 
-    def _update_slider(self):
+    def _update_slider(self, frame_num: int):
         """Update slider position."""
-        if self._frame_count > 0:
-            pos = int((self._current_frame / self._frame_count) * 1000)
+        if self._frame_reader.frame_count > 0:
+            pos = int((frame_num / self._frame_reader.frame_count) * 1000)
             self._seek_slider.blockSignals(True)
             self._seek_slider.setValue(pos)
             self._seek_slider.blockSignals(False)
 
-    def _on_timer(self):
-        """Timer callback for playback."""
-        if not self._is_playing or self._capture is None:
-            return
-
-        next_frame = self._current_frame + 1
-
-        # Check if we need to skip a cut region
-        if self._skip_cuts and self._cuts:
-            current_time = next_frame / self._fps
-            for cut in self._cuts:
-                if cut.enabled and cut.start <= current_time < cut.end:
-                    # Skip to end of cut
-                    next_frame = int(cut.end * self._fps) + 1
-                    logger.debug(f"Skipping cut: {cut.start:.2f}s - {cut.end:.2f}s")
-                    break
-
-        if next_frame >= self._frame_count:
-            self.pause()
-            return
-
-        self._show_frame(next_frame)
-
     def _on_slider_pressed(self):
-        """Slider pressed - pause playback temporarily."""
+        """Slider pressed - pause updates."""
+        self._slider_pressed = True
         self._was_playing = self._is_playing
         if self._is_playing:
-            self._timer.stop()
+            self._frame_reader.pause()
 
     def _on_slider_released(self):
-        """Slider released - resume playback if was playing."""
+        """Slider released - resume if was playing."""
+        self._slider_pressed = False
         if hasattr(self, '_was_playing') and self._was_playing:
-            self._timer.start()
+            self._frame_reader.play()
 
     def _on_slider_moved(self, value: int):
         """Slider moved - seek to position."""
-        if self._frame_count > 0:
-            frame = int((value / 1000) * self._frame_count)
-            self._show_frame(frame)
+        if self._frame_reader.frame_count > 0:
+            frame = int((value / 1000) * self._frame_reader.frame_count)
+            self._frame_reader.seek(frame)
 
     @property
     def duration(self) -> float:
@@ -340,7 +426,7 @@ class VideoPlayer(QWidget):
     @property
     def current_time(self) -> float:
         """Get current playback time in seconds."""
-        return self._current_frame / self._fps if self._fps > 0 else 0
+        return self._frame_reader.current_frame / self._frame_reader.fps if self._frame_reader.fps > 0 else 0
 
     @property
     def is_playing(self) -> bool:
@@ -350,6 +436,5 @@ class VideoPlayer(QWidget):
     def closeEvent(self, event):
         """Clean up on close."""
         self.stop()
-        if self._capture is not None:
-            self._capture.release()
+        self._frame_reader.close()
         super().closeEvent(event)
