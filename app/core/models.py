@@ -229,17 +229,17 @@ class TranscriptSegment:
 class AnalysisConfig:
     """Sessizlik analizi konfigürasyonu."""
     # Temel eşikler
-    silence_threshold_db: float = -35.0     # dBFS altı = sessizlik
+    silence_threshold_db: float = -30.0     # dBFS altı = sessizlik (daha az hassas)
     hysteresis_db: float = 3.0              # açma/kapama histerezisi
 
     # Süre limitleri (milisaniye)
-    silence_min_duration_ms: int = 250      # min sessizlik süresi
-    merge_gap_ms: int = 120                 # bu kadar yakın sessizlikleri birleştir
-    keep_short_pauses_ms: int = 0           # bu süreden kısa duraklamaları koru (0=devre dışı)
+    silence_min_duration_ms: int = 500      # min sessizlik süresi (0.5s - daha az segment)
+    merge_gap_ms: int = 300                 # bu kadar yakın sessizlikleri birleştir (daha agresif birleştirme)
+    keep_short_pauses_ms: int = 150         # 150ms altı duraklamaları koru (doğal konuşma)
 
     # Padding
-    pre_pad_ms: int = 80                    # kesimden önce padding
-    post_pad_ms: int = 120                  # kesimden sonra padding
+    pre_pad_ms: int = 100                   # kesimden önce padding
+    post_pad_ms: int = 150                  # kesimden sonra padding
 
     # Analiz parametreleri
     frame_ms: int = 10                      # analiz pencere boyutu
