@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QThreadPool, QSize, QProcess
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QThreadPool, QSize
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -66,6 +66,7 @@ from app.export.premiere_xml import export_premiere_xml
 from .timeline_widget import TimelineWidget
 from .settings_dialog import SettingsDialog
 from .worker import Worker
+from .video_player import VideoPlayer
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,6 @@ class MainWindow(QMainWindow):
         self._project_path: Optional[Path] = None
         self._progress_dialog: Optional[QProgressDialog] = None
         self._video_path: Optional[Path] = None
-        self._ffplay_process: Optional[QProcess] = None
 
         # Dil ayarı
         if self.settings.language:
@@ -289,24 +289,13 @@ class MainWindow(QMainWindow):
         panel.setObjectName("centerPanel")
 
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        # Video preview - uses thumbnail from FFmpeg
-        self.video_frame = QFrame()
-        self.video_frame.setMinimumHeight(200)
-        self.video_frame.setStyleSheet("background-color: #000000; border-radius: 8px;")
-        video_layout = QVBoxLayout(self.video_frame)
-        video_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.video_label = QLabel("🎬 Video Preview\n(Import a video to begin)")
-        self.video_label.setAlignment(Qt.AlignCenter)
-        self.video_label.setStyleSheet("color: #666666; font-size: 14px;")
-        self.video_label.setScaledContents(False)
-        video_layout.addWidget(self.video_label)
-        layout.addWidget(self.video_frame, 2)
-
-        self._ffplay_process = None
+        # Video player (OpenCV-based)
+        self.video_player = VideoPlayer()
+        self.video_player.position_changed.connect(self._on_video_position_changed)
+        layout.addWidget(self.video_player, 2)
 
         # Timeline widget
         self.timeline = TimelineWidget()
@@ -315,38 +304,17 @@ class MainWindow(QMainWindow):
         self.timeline.playhead_moved.connect(self._on_playhead_moved)
         layout.addWidget(self.timeline, 1)
 
-        # Playback controls
-        controls = QFrame()
-        controls.setObjectName("playbackControls")
-        controls_layout = QHBoxLayout(controls)
-        controls_layout.setContentsMargins(12, 8, 12, 8)
-
-        self.time_label = QLabel("00:00:00.000")
-        self.time_label.setObjectName("timeLabel")
-        self.time_label.setFixedWidth(110)
-        controls_layout.addWidget(self.time_label)
-
-        self.play_btn = QPushButton("▶")
-        self.play_btn.setObjectName("playButton")
-        self.play_btn.setFixedSize(40, 40)
-        self.play_btn.clicked.connect(self._toggle_playback)
-        controls_layout.addWidget(self.play_btn)
-
-        self.position_slider = QSlider(Qt.Horizontal)
-        self.position_slider.setObjectName("positionSlider")
-        self.position_slider.valueChanged.connect(self._on_position_slider)
-        controls_layout.addWidget(self.position_slider, 1)
-
-        self.duration_label = QLabel("00:00:00.000")
-        self.duration_label.setObjectName("timeLabel")
-        self.duration_label.setFixedWidth(110)
-        controls_layout.addWidget(self.duration_label)
-
-        # Zoom controls
-        zoom_layout = QHBoxLayout()
+        # Timeline zoom controls
+        zoom_controls = QFrame()
+        zoom_controls.setObjectName("zoomControls")
+        zoom_layout = QHBoxLayout(zoom_controls)
+        zoom_layout.setContentsMargins(8, 4, 8, 4)
         zoom_layout.setSpacing(4)
 
-        zoom_label = QLabel("🔍")
+        zoom_layout.addStretch()
+
+        zoom_label = QLabel("Timeline Zoom:")
+        zoom_label.setStyleSheet("color: #888888;")
         zoom_layout.addWidget(zoom_label)
 
         zoom_out_btn = QPushButton("−")
@@ -366,8 +334,7 @@ class MainWindow(QMainWindow):
         fit_btn.clicked.connect(lambda: self.timeline.zoom_fit())
         zoom_layout.addWidget(fit_btn)
 
-        controls_layout.addLayout(zoom_layout)
-        layout.addWidget(controls)
+        layout.addWidget(zoom_controls)
 
         return panel
 
@@ -914,9 +881,11 @@ class MainWindow(QMainWindow):
             # Store video path for playback
             self._video_path = file_path
 
-            # Extract and display thumbnail
-            self._extract_thumbnail(file_path, media_info.duration)
-            logger.debug(f"Video loaded: {file_path}")
+            # Load video into player
+            if self.video_player.load_video(file_path):
+                logger.info(f"Video loaded into player: {file_path}")
+            else:
+                logger.warning(f"Failed to load video into player: {file_path}")
 
             self._update_media_info()
             self.analyze_btn.setEnabled(True)
@@ -1058,6 +1027,7 @@ class MainWindow(QMainWindow):
             self._update_cuts_list()
             self._update_stats()
             self.timeline.set_cuts(cuts)
+            self.video_player.set_cuts(cuts)  # Pass cuts to video player for skip feature
             self.export_btn.setEnabled(True)
             self.export_action.setEnabled(True)
 
@@ -1295,20 +1265,13 @@ class MainWindow(QMainWindow):
         self._update_stats()
 
     def _on_playhead_moved(self, time_sec: float):
-        """Playhead hareket etti."""
-        self.time_label.setText(self._format_time(time_sec))
+        """Timeline playhead hareket etti - video'yu da güncelle."""
+        if hasattr(self, 'video_player'):
+            self.video_player.seek(time_sec)
 
-        if self.project and self.project.media_info:
-            value = int(time_sec * 1000)
-            self.position_slider.blockSignals(True)
-            self.position_slider.setValue(value)
-            self.position_slider.blockSignals(False)
-
-    def _on_position_slider(self, value: int):
-        """Position slider değişti."""
-        time_sec = value / 1000.0
+    def _on_video_position_changed(self, time_sec: float):
+        """Video pozisyonu değişti - timeline'ı güncelle."""
         self.timeline.set_playhead(time_sec)
-        self.time_label.setText(self._format_time(time_sec))
 
 
     def _on_cut_list_clicked(self, item: QListWidgetItem):
@@ -1368,87 +1331,7 @@ class MainWindow(QMainWindow):
         self._update_stats()
         self.timeline.set_cuts(self.project.cuts)
 
-    def _extract_thumbnail(self, video_path: Path, duration: float):
-        """Extract thumbnail from video using FFmpeg."""
-        try:
-            import subprocess
 
-            # Extract frame at 10% of duration
-            seek_time = duration * 0.1
-            cache_dir = Settings.get_cache_dir()
-            thumb_path = cache_dir / f"{video_path.stem}_thumb.jpg"
-
-            cmd = [
-                "ffmpeg", "-y",
-                "-ss", str(seek_time),
-                "-i", str(video_path),
-                "-vframes", "1",
-                "-q:v", "2",
-                str(thumb_path)
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, timeout=10)
-
-            if thumb_path.exists():
-                pixmap = QPixmap(str(thumb_path))
-                if not pixmap.isNull():
-                    # Scale to fit the video label
-                    label_size = self.video_label.size()
-                    scaled = pixmap.scaled(
-                        label_size,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation
-                    )
-                    self.video_label.setPixmap(scaled)
-                    self.video_label.setStyleSheet("")
-                    logger.debug(f"Thumbnail extracted: {thumb_path}")
-                else:
-                    self.video_label.setText(f"🎬 {video_path.name}")
-            else:
-                self.video_label.setText(f"🎬 {video_path.name}")
-
-        except Exception as e:
-            logger.warning(f"Failed to extract thumbnail: {e}")
-            self.video_label.setText(f"🎬 {video_path.name}")
-
-    def _toggle_playback(self):
-        """Play/pause toggle using external ffplay."""
-        if not hasattr(self, '_video_path') or not self._video_path:
-            return
-
-        # If ffplay is already running, kill it
-        if self._ffplay_process is not None:
-            self._ffplay_process.kill()
-            self._ffplay_process = None
-            self.play_btn.setText("▶")
-            return
-
-        # Get current position from slider
-        position_ms = self.position_slider.value()
-        position_sec = position_ms / 1000.0
-
-        # Start ffplay with video window
-        self._ffplay_process = QProcess(self)
-        self._ffplay_process.finished.connect(self._on_ffplay_finished)
-
-        args = [
-            "-ss", str(position_sec),
-            "-autoexit",
-            "-window_title", "AutoCut Preview",
-            "-x", "800",  # Window width
-            "-y", "450",  # Window height
-            "-alwaysontop",  # Keep on top
-            str(self._video_path)
-        ]
-
-        logger.info(f"Starting ffplay: ffplay {' '.join(args)}")
-        self._ffplay_process.start("ffplay", args)
-        self.play_btn.setText("⏹")
-
-    def _on_ffplay_finished(self):
-        """FFplay finished callback."""
-        self._ffplay_process = None
-        self.play_btn.setText("▶")
 
     def _run_transcription(self):
         """Transkripsiyon çalıştır."""
