@@ -11,8 +11,8 @@ scipy>=1.11.0
 # Media Processing
 ffmpeg-python>=0.2.0
 
-# Video Playback
-python-mpv>=1.0.0
+# Video Frame Extraction (for preview)
+opencv-python-headless>=4.8.0
 
 # XML Export (FCPXML)
 lxml>=5.0.0

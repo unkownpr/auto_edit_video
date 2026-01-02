@@ -6,8 +6,12 @@ Entry point for the application.
 """
 
 import sys
+import os
 import logging
 from pathlib import Path
+
+# Disable Qt multimedia to prevent FFmpeg crashes on macOS
+os.environ.setdefault("QT_MEDIA_BACKEND", "")
 
 from PySide6.QtWidgets import QApplication
 

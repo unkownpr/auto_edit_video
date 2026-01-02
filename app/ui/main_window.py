@@ -1045,12 +1045,31 @@ class MainWindow(QMainWindow):
             if self._progress_dialog:
                 self._progress_dialog.close()
                 self._progress_dialog = None
+
+            logger.info(f"Analysis complete: {len(cuts)} silence regions found")
+
+            # Log first 5 cuts for debugging
+            for i, cut in enumerate(cuts[:5]):
+                logger.info(f"  Cut {i+1}: {cut.start:.2f}s - {cut.end:.2f}s ({cut.duration:.2f}s)")
+            if len(cuts) > 5:
+                logger.info(f"  ... and {len(cuts) - 5} more cuts")
+
             self.project.cuts = cuts
             self._update_cuts_list()
             self._update_stats()
             self.timeline.set_cuts(cuts)
             self.export_btn.setEnabled(True)
             self.export_action.setEnabled(True)
+
+            # Show message box with summary
+            total_cut_duration = sum(c.duration for c in cuts if c.enabled)
+            msg = f"{len(cuts)} sessiz bölge bulundu!\n\n"
+            msg += f"Toplam kesilecek süre: {self._format_time(total_cut_duration)}\n"
+            msg += f"İlk 3 kesim:\n"
+            for cut in cuts[:3]:
+                msg += f"  • {self._format_time(cut.start)} - {self._format_time(cut.end)}\n"
+            QMessageBox.information(self, "Analiz Tamamlandı", msg)
+
             self.statusbar.showMessage(tr("status_found_cuts", len(cuts)))
 
         def on_error(error):
