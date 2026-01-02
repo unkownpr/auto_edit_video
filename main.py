@@ -13,6 +13,22 @@ from pathlib import Path
 # Disable Qt multimedia to prevent FFmpeg crashes on macOS
 os.environ.setdefault("QT_MEDIA_BACKEND", "")
 
+# Fix macOS dock name showing "Python" instead of app name
+def _set_macos_app_name(name: str):
+    """Set the application name in macOS dock."""
+    try:
+        from Foundation import NSBundle
+        bundle = NSBundle.mainBundle()
+        if bundle:
+            info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+            if info:
+                info['CFBundleName'] = name
+    except ImportError:
+        pass  # PyObjC not installed, skip
+
+if sys.platform == 'darwin':
+    _set_macos_app_name('AutoCut')
+
 from PySide6.QtWidgets import QApplication
 
 from app import __version__, __app_name__

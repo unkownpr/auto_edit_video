@@ -26,6 +26,9 @@ webrtcvad>=2.0.10
 # Platform directories
 platformdirs>=4.0.0
 
+# macOS dock name fix (optional, macOS only)
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+
 # ------ Development Dependencies ------
 # pytest>=7.4.0
 # pytest-qt>=4.2.0
