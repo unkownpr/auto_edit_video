@@ -914,10 +914,7 @@ class MainWindow(QMainWindow):
         text += f"🔊 {info.sample_rate}Hz, {info.channels}ch"
 
         self.media_label.setText(text)
-
         self.original_duration_label.setText(duration)
-        self.duration_label.setText(duration)
-        self.position_slider.setMaximum(int(info.duration * 1000))
 
     def _extract_and_analyze(self):
         """Audio extract ve waveform üretimi."""
