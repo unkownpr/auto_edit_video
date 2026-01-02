@@ -1483,9 +1483,12 @@ class MainWindow(QMainWindow):
         # Model seçim dialogu
         dialog = QDialog(self)
         dialog.setWindowTitle("Transkripsiyon Ayarları")
-        dialog.setMinimumWidth(400)
+        dialog.setMinimumWidth(450)
 
         layout = QVBoxLayout(dialog)
+
+        # Check which models are downloaded
+        from app.transcript.transcriber import is_model_downloaded
 
         # Model seçimi
         model_group = QGroupBox("Model Seçimi")
@@ -1493,16 +1496,30 @@ class MainWindow(QMainWindow):
 
         model_combo = QComboBox()
         models = [
-            ("tiny", "Tiny - En Hızlı (~10x)", "~1 dakika / 10 dk video"),
-            ("base", "Base - Hızlı (~5x)", "~2 dakika / 10 dk video (Önerilen)"),
-            ("small", "Small - Dengeli (~2x)", "~5 dakika / 10 dk video"),
-            ("medium", "Medium - Doğru", "~10 dakika / 10 dk video"),
-            ("large-v3", "Large - En Doğru", "~20+ dakika / 10 dk video"),
+            ("tiny", "Tiny - En Hızlı (~10x)", "~1 dk / 10 dk video"),
+            ("base", "Base - Hızlı (~5x)", "~2 dk / 10 dk video (Önerilen)"),
+            ("small", "Small - Dengeli (~2x)", "~5 dk / 10 dk video"),
+            ("medium", "Medium - Doğru", "~10 dk / 10 dk video"),
+            ("large-v3", "Large - En Doğru", "~20+ dk / 10 dk video"),
         ]
-        for model_id, name, desc in models:
-            model_combo.addItem(f"{name} - {desc}", model_id)
-        model_combo.setCurrentIndex(1)  # Default: base
+
+        default_index = 1  # Default: base
+        for i, (model_id, name, desc) in enumerate(models):
+            is_downloaded = is_model_downloaded(model_id)
+            status = "✅" if is_downloaded else "⬇️"
+            model_combo.addItem(f"{status} {name} - {desc}", model_id)
+            # Select first downloaded model as default if base is not downloaded
+            if is_downloaded and not is_model_downloaded("base") and default_index == 1:
+                default_index = i
+
+        model_combo.setCurrentIndex(default_index)
         model_layout.addWidget(model_combo)
+
+        # Download status info
+        downloaded_count = sum(1 for m, _, _ in models if is_model_downloaded(m))
+        status_label = QLabel(f"✅ = İndirilmiş ({downloaded_count}/5)  |  ⬇️ = İlk kullanımda indirilecek")
+        status_label.setStyleSheet("color: #888; font-size: 10px; padding: 4px;")
+        model_layout.addWidget(status_label)
 
         layout.addWidget(model_group)
 
@@ -1690,13 +1707,14 @@ class MainWindow(QMainWindow):
                     segment_files.append(segment_path)
 
                     # Use FFmpeg to extract segment
-                    # -ss after -i for frame-accurate cutting
+                    # -ss before -i for fast seeking, then -t for duration
                     cmd = [
                         ffmpeg.ffmpeg_path,
                         "-y",
-                        "-i", str(media.file_path),
                         "-ss", str(start),
+                        "-i", str(media.file_path),
                         "-t", str(end - start),
+                        "-map", "0",  # Include ALL streams (video + audio)
                         "-c", "copy",
                         "-avoid_negative_ts", "make_zero",
                         str(segment_path)
@@ -1743,6 +1761,7 @@ class MainWindow(QMainWindow):
                     "-f", "concat",
                     "-safe", "0",
                     "-i", str(concat_file),
+                    "-map", "0",  # Include ALL streams
                     "-c", "copy",
                     str(output_path)
                 ]

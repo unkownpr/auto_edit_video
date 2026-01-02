@@ -25,6 +25,68 @@ from app.core.models import TranscriptSegment, TranscriptWord
 logger = logging.getLogger(__name__)
 
 
+def get_model_cache_path(model_name: str) -> Path:
+    """Get the cache path for a whisper model."""
+    from pathlib import Path
+    import os
+
+    # faster-whisper uses huggingface hub cache
+    cache_dir = Path(os.environ.get(
+        "HF_HOME",
+        Path.home() / ".cache" / "huggingface" / "hub"
+    ))
+    return cache_dir
+
+
+def is_model_downloaded(model_name: str) -> bool:
+    """Check if a whisper model is already downloaded."""
+    try:
+        from pathlib import Path
+        import os
+
+        # faster-whisper model names map to huggingface repo names
+        model_map = {
+            "tiny": "Systran/faster-whisper-tiny",
+            "base": "Systran/faster-whisper-base",
+            "small": "Systran/faster-whisper-small",
+            "medium": "Systran/faster-whisper-medium",
+            "large-v3": "Systran/faster-whisper-large-v3",
+            "large": "Systran/faster-whisper-large-v3",
+        }
+
+        repo_name = model_map.get(model_name, f"Systran/faster-whisper-{model_name}")
+        repo_id = repo_name.replace("/", "--")
+
+        # Check huggingface cache directory
+        cache_dir = Path(os.environ.get(
+            "HF_HOME",
+            Path.home() / ".cache" / "huggingface" / "hub"
+        ))
+
+        model_dir = cache_dir / f"models--{repo_id}"
+
+        if model_dir.exists():
+            # Check if model files are present (not just the directory)
+            snapshots_dir = model_dir / "snapshots"
+            if snapshots_dir.exists():
+                for snapshot in snapshots_dir.iterdir():
+                    if snapshot.is_dir():
+                        # Check for model.bin or other model files
+                        model_files = list(snapshot.glob("*.bin")) + list(snapshot.glob("*.safetensors"))
+                        if model_files:
+                            return True
+        return False
+    except Exception as e:
+        logger.debug(f"Error checking model {model_name}: {e}")
+        return False
+
+
+def get_downloaded_models() -> list[str]:
+    """Get list of downloaded model names."""
+    models = ["tiny", "base", "small", "medium", "large-v3"]
+    return [m for m in models if is_model_downloaded(m)]
+
+
 class TranscriptBackend(Enum):
     """Transkript backend seçenekleri."""
     FASTER_WHISPER = "faster-whisper"

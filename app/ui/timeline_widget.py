@@ -568,8 +568,11 @@ class TimelineWidget(QWidget):
         self.ruler_item.set_duration(data.duration)
         self.video_item.duration = data.duration
 
-        # Thumbnail extraction disabled - causes segfault with OpenCV
-        # TODO: Extract thumbnails in a separate process to avoid conflicts
+        # Extract thumbnails after a delay to avoid conflicts with waveform rendering
+        if self._video_path and self._video_path.exists():
+            self.video_item.set_video(self._video_path, data.duration)
+            # Longer delay to ensure UI is stable before OpenCV operations
+            QTimer.singleShot(500, self._extract_thumbnails_delayed)
 
         self._update_scene_rect()
 
