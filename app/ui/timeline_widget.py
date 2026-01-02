@@ -17,7 +17,7 @@ import logging
 import cv2
 import numpy as np
 
-from PySide6.QtCore import Qt, Signal, QRectF, QPointF, QTimer, QThread, QObject
+from PySide6.QtCore import Qt, Signal, QRectF, QPointF, QTimer, QThread, QObject, Slot
 from PySide6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
@@ -210,9 +210,12 @@ class WaveformItem(QGraphicsItem):
 
     def set_waveform(self, data: WaveformData):
         """Set waveform data."""
+        logger.info(f"WaveformItem.set_waveform called, duration={data.duration if data else 'None'}")
         self.waveform_data = data
-        self.prepareGeometryChange()
-        self.update()
+        if data:
+            self.prepareGeometryChange()
+            # Defer update to avoid immediate repaint issues
+            QTimer.singleShot(0, self.update)
 
     def set_scale(self, pixels_per_second: float):
         """Update zoom level."""

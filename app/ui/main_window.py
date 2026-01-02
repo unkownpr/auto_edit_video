@@ -1015,18 +1015,26 @@ class MainWindow(QMainWindow):
 
         def on_complete(waveform):
             try:
-                logger.debug("on_complete: closing progress dialog")
+                logger.info("on_complete (waveform): closing progress dialog")
                 self._close_progress_dialog()
-                logger.debug("on_complete: setting waveform data")
+
+                logger.info("on_complete (waveform): setting waveform data")
                 self.waveform_data = waveform
-                logger.debug(f"on_complete: waveform duration={waveform.duration}")
-                logger.debug("on_complete: calling timeline.set_waveform")
-                self.timeline.set_waveform(waveform)
-                logger.debug("on_complete: set_waveform done")
-                if self.project and self.project.media_info:
-                    logger.debug("on_complete: calling timeline.set_duration")
-                    self.timeline.set_duration(self.project.media_info.duration)
-                logger.debug("on_complete: all done successfully")
+
+                # Use QTimer to ensure UI updates happen safely in main thread
+                def update_timeline():
+                    try:
+                        logger.info(f"update_timeline: waveform duration={waveform.duration}")
+                        self.timeline.set_waveform(waveform)
+                        logger.info("update_timeline: set_waveform done")
+                        if self.project and self.project.media_info:
+                            self.timeline.set_duration(self.project.media_info.duration)
+                        logger.info("update_timeline: all done successfully")
+                    except Exception as e:
+                        logger.exception(f"Error in update_timeline: {e}")
+
+                QTimer.singleShot(100, update_timeline)
+
             except Exception as e:
                 logger.exception(f"Error in on_complete: {e}")
                 QMessageBox.critical(self, tr("dialog_error"), str(e))
