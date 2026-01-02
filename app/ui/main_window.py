@@ -1666,151 +1666,99 @@ class MainWindow(QMainWindow):
 
         def do_work(progress_callback):
             from app.media.ffmpeg import FFmpegWrapper
-            import tempfile
-            import os
-            import uuid
+            import subprocess
 
             ffmpeg = FFmpegWrapper()
-            cache_dir = Settings.get_cache_dir()
-
-            # Unique ID for this render session to avoid conflicts
-            session_id = uuid.uuid4().hex[:8]
 
             progress_callback(5, tr("render_cutting"))
 
-            # Create a concat file for FFmpeg
-            concat_file = cache_dir / f"concat_{session_id}.txt"
-            segment_files = []
+            # Log segments info
+            logger.info(f"=== RENDER START ===")
+            logger.info(f"Total segments to keep: {len(segments)}")
+            for i, (start, end) in enumerate(segments[:5]):
+                logger.info(f"  Segment {i+1}: {start:.3f}s - {end:.3f}s")
+            if len(segments) > 5:
+                logger.info(f"  ... and {len(segments) - 5} more")
 
-            try:
-                # Clean up any old segment and concat files first
-                logger.info("Cleaning up old temp files...")
-                for pattern in ["segment_*.mp4", "segment_*.mov", "segment_*.mkv", "concat_*.txt"]:
-                    for old_file in cache_dir.glob(pattern):
-                        try:
-                            old_file.unlink()
-                            logger.debug(f"Deleted: {old_file}")
-                        except:
-                            pass
+            # Delete output file if exists
+            if output_path.exists():
+                logger.info(f"Deleting existing output: {output_path}")
+                output_path.unlink()
 
-                # Extract each segment
-                for i, (start, end) in enumerate(segments):
-                    progress_callback(
-                        5 + int((i / len(segments)) * 70),
-                        tr("render_segment_progress", i+1, len(segments))
-                    )
+            progress_callback(10, tr("render_merging"))
 
-                    segment_path = cache_dir / f"segment_{session_id}_{i:04d}{media.file_path.suffix}"
-                    segment_files.append(segment_path)
+            # Build FFmpeg filter_complex for selecting and concatenating segments
+            # This does everything in one pass - more reliable than many temp files
 
-                    # Use FFmpeg to extract segment
-                    # -ss after -i for frame-accurate seeking (slower but precise)
-                    segment_duration = end - start
-                    logger.info(f"Extracting segment {i+1}: {start:.3f}s to {end:.3f}s (duration: {segment_duration:.3f}s)")
+            # For many segments, use trim filter approach
+            filter_parts = []
+            concat_inputs = []
 
-                    cmd = [
-                        ffmpeg.ffmpeg_path,
-                        "-y",
-                        "-i", str(media.file_path),
-                        "-ss", str(start),
-                        "-t", str(segment_duration),
-                        "-c", "copy",
-                        "-avoid_negative_ts", "make_zero",
-                        str(segment_path)
-                    ]
+            for i, (start, end) in enumerate(segments):
+                # Trim video and audio for each segment
+                filter_parts.append(f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{i}]")
+                filter_parts.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{i}]")
+                concat_inputs.append(f"[v{i}][a{i}]")
 
-                    import subprocess
-                    result = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True
-                    )
+            # Concat all segments
+            filter_complex = ";".join(filter_parts)
+            filter_complex += f";{''.join(concat_inputs)}concat=n={len(segments)}:v=1:a=1[outv][outa]"
 
-                    if result.returncode != 0:
-                        logger.error(f"FFmpeg segment error: {result.stderr}")
-                        raise RuntimeError(f"FFmpeg segment error: {result.stderr}")
+            logger.info(f"Filter has {len(segments)} segments")
 
-                progress_callback(80, tr("render_merging"))
+            # Build FFmpeg command
+            cmd = [
+                ffmpeg.ffmpeg_path,
+                "-y",
+                "-i", str(media.file_path),
+                "-filter_complex", filter_complex,
+                "-map", "[outv]",
+                "-map", "[outa]",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "18",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                str(output_path)
+            ]
 
-                # Verify all segments exist and log their info
-                total_segment_size = 0
-                for idx, seg_path in enumerate(segment_files):
-                    if not seg_path.exists():
-                        raise RuntimeError(f"Segment file missing: {seg_path}")
-                    seg_size = seg_path.stat().st_size
-                    total_segment_size += seg_size
-                    expected_start, expected_end = segments[idx]
-                    logger.info(f"Segment {idx+1}: {seg_path.name} "
-                               f"(size: {seg_size/1024:.1f}KB, expected: {expected_start:.2f}s-{expected_end:.2f}s)")
+            logger.info(f"Running FFmpeg with filter_complex (re-encoding)...")
 
-                logger.info(f"Total segments: {len(segment_files)}, Total size: {total_segment_size/1024/1024:.2f}MB")
+            # Run with progress updates
+            process = subprocess.Popen(
+                cmd,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
 
-                # Create concat file with only our session's segments
-                logger.info(f"Creating concat file: {concat_file}")
-                with open(concat_file, "w") as f:
-                    for seg_path in segment_files:
-                        f.write(f"file '{seg_path}'\n")
-
-                # Log concat file contents
-                with open(concat_file, "r") as f:
-                    logger.info(f"Concat file contents:\n{f.read()}")
-
-                # Delete output file if exists to ensure clean start
-                if output_path.exists():
-                    logger.info(f"Deleting existing output: {output_path}")
-                    output_path.unlink()
-
-                # Concatenate segments - simple copy without re-mapping
-                cmd = [
-                    ffmpeg.ffmpeg_path,
-                    "-y",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", str(concat_file),
-                    "-c", "copy",
-                    str(output_path)
-                ]
-
-                logger.info(f"Running concat: {' '.join(cmd)}")
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True
-                )
-
-                if result.returncode != 0:
-                    logger.error(f"FFmpeg concat error: {result.stderr}")
-                    raise RuntimeError(f"FFmpeg concat error: {result.stderr}")
-
-                # Verify output
-                if output_path.exists():
-                    output_size = output_path.stat().st_size
-                    size_ratio = output_size / total_segment_size if total_segment_size > 0 else 0
-                    logger.info(f"Output created: {output_path}")
-                    logger.info(f"  Output size: {output_size/1024/1024:.2f}MB")
-                    logger.info(f"  Segments total: {total_segment_size/1024/1024:.2f}MB")
-                    logger.info(f"  Size ratio: {size_ratio:.2f}x (should be ~1.0)")
-
-                    if size_ratio > 1.5:
-                        logger.warning(f"WARNING: Output is {size_ratio:.1f}x larger than segments - possible duplication!")
-                else:
-                    raise RuntimeError("Output file was not created")
-
-                progress_callback(95, tr("render_cleaning"))
-
-            finally:
-                # Cleanup temp files
-                for seg_path in segment_files:
+            # Monitor progress
+            while True:
+                line = process.stderr.readline()
+                if not line and process.poll() is not None:
+                    break
+                if "time=" in line:
+                    # Extract time from FFmpeg output
                     try:
-                        if seg_path.exists():
-                            seg_path.unlink()
+                        time_str = line.split("time=")[1].split()[0]
+                        parts = time_str.split(":")
+                        current_time = float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+                        progress = min(95, 10 + int((current_time / total_segment_duration) * 85))
+                        progress_callback(progress, f"{current_time:.0f}s / {total_segment_duration:.0f}s")
                     except:
                         pass
-                try:
-                    if concat_file.exists():
-                        concat_file.unlink()
-                except:
-                    pass
+
+            return_code = process.wait()
+
+            if return_code != 0:
+                logger.error(f"FFmpeg error (code {return_code})")
+                raise RuntimeError(f"FFmpeg encoding failed")
+
+            # Verify output
+            if output_path.exists():
+                output_size = output_path.stat().st_size
+                logger.info(f"Output created: {output_path} ({output_size/1024/1024:.2f}MB)")
+            else:
+                raise RuntimeError("Output file was not created")
 
             progress_callback(100, tr("render_complete"))
             return output_path
