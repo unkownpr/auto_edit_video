@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
 )
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPalette, QColor, QPixmap, QImage
+import importlib.resources
 # Video player disabled due to Qt/FFmpeg crash on macOS
 # from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 # from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -111,12 +112,27 @@ class MainWindow(QMainWindow):
         self._setup_statusbar()
         self._apply_theme()
         self._update_ui_language()
+        self._set_app_icon()
 
         # Autosave timer
         if self.settings.autosave_enabled:
             self.autosave_timer = QTimer(self)
             self.autosave_timer.timeout.connect(self._autosave)
             self.autosave_timer.start(self.settings.autosave_interval_sec * 1000)
+
+    def _set_app_icon(self):
+        """Set application icon."""
+        try:
+            icon_path = Path(__file__).parent.parent.parent / "resources" / "icon.png"
+            if icon_path.exists():
+                icon = QIcon(str(icon_path))
+                self.setWindowIcon(icon)
+                QApplication.instance().setWindowIcon(icon)
+                logger.debug(f"App icon set from: {icon_path}")
+            else:
+                logger.warning(f"Icon not found: {icon_path}")
+        except Exception as e:
+            logger.warning(f"Failed to set app icon: {e}")
 
     def _check_ffmpeg(self) -> bool:
         """FFmpeg kurulumunu kontrol et."""
@@ -322,6 +338,18 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(btn_layout)
         layout.addStretch()
+
+        # Developer credit
+        dev_label = QLabel("developed by ssilistre.dev")
+        dev_label.setObjectName("developerCredit")
+        dev_label.setAlignment(Qt.AlignCenter)
+        dev_label.setStyleSheet("""
+            color: #666666;
+            font-size: 10px;
+            padding: 8px;
+            font-style: italic;
+        """)
+        layout.addWidget(dev_label)
 
         return panel
 
@@ -1713,4 +1741,18 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         """About dialog."""
         from app import __version__
-        QMessageBox.about(self, tr("about_title"), tr("about_text", __version__))
+        about_text = f"""
+<h2>AutoCut</h2>
+<p>Version {__version__}</p>
+<p>Otomatik sessizlik algılama ve video düzenleme aracı.</p>
+<p><b>Özellikler:</b></p>
+<ul>
+<li>Sessiz bölgeleri otomatik tespit</li>
+<li>Final Cut Pro tarzı timeline</li>
+<li>FCPXML, Premiere XML, EDL export</li>
+<li>Sessiz alanları kesip yeni video oluşturma</li>
+</ul>
+<hr>
+<p style="color: #888;">developed by <b>ssilistre.dev</b></p>
+"""
+        QMessageBox.about(self, "AutoCut Hakkında", about_text)
