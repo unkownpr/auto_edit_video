@@ -1,0 +1,149 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+  build-macos:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install FFmpeg
+        run: brew install ffmpeg
+
+      - name: Build macOS app
+        run: |
+          pyinstaller --name="AutoCut" \
+            --windowed \
+            --icon=app/resources/icon.icns \
+            --add-data="app/core/i18n/locales:app/core/i18n/locales" \
+            --hidden-import=PySide6.QtCore \
+            --hidden-import=PySide6.QtGui \
+            --hidden-import=PySide6.QtWidgets \
+            --hidden-import=numpy \
+            --hidden-import=scipy \
+            --noconfirm \
+            main.py || pyinstaller --name="AutoCut" --windowed --noconfirm main.py
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg || true
+          create-dmg \
+            --volname "AutoCut" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 450 185 \
+            "AutoCut-macOS.dmg" \
+            "dist/AutoCut.app" || (cd dist && zip -r ../AutoCut-macOS.zip AutoCut.app)
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoCut-macOS
+          path: |
+            AutoCut-macOS.dmg
+            AutoCut-macOS.zip
+          if-no-files-found: warn
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Windows exe
+        run: |
+          pyinstaller --name="AutoCut" `
+            --windowed `
+            --add-data="app/core/i18n/locales;app/core/i18n/locales" `
+            --hidden-import=PySide6.QtCore `
+            --hidden-import=PySide6.QtGui `
+            --hidden-import=PySide6.QtWidgets `
+            --hidden-import=numpy `
+            --hidden-import=scipy `
+            --noconfirm `
+            main.py
+
+      - name: Create Windows installer
+        run: |
+          choco install innosetup -y
+          # Create simple zip for now
+          Compress-Archive -Path "dist\AutoCut\*" -DestinationPath "AutoCut-Windows.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoCut-Windows
+          path: AutoCut-Windows.zip
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Display structure
+        run: ls -R
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            AutoCut-macOS/*
+            AutoCut-Windows/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

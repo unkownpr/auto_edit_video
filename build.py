@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""
+AutoCut Build Script
+
+PyInstaller ile macOS .app ve Windows .exe oluşturur.
+
+Kullanım:
+    python build.py          # Mevcut platform için build
+    python build.py --all    # Tüm platformlar için (cross-compile desteklenmiyor)
+    python build.py --clean  # Build artifacts temizle
+"""
+
+import os
+import sys
+import shutil
+import subprocess
+import platform
+from pathlib import Path
+
+# Build dizinleri
+ROOT_DIR = Path(__file__).parent
+DIST_DIR = ROOT_DIR / "dist"
+BUILD_DIR = ROOT_DIR / "build"
+SPEC_DIR = ROOT_DIR / "specs"
+
+# Uygulama bilgileri
+APP_NAME = "AutoCut"
+APP_VERSION = "0.1.0"
+APP_BUNDLE_ID = "com.autocut.app"
+
+
+def clean():
+    """Build artifacts temizle."""
+    print("🧹 Temizleniyor...")
+
+    for dir_path in [DIST_DIR, BUILD_DIR, SPEC_DIR]:
+        if dir_path.exists():
+            shutil.rmtree(dir_path)
+            print(f"   Silindi: {dir_path}")
+
+    # .spec dosyaları
+    for spec in ROOT_DIR.glob("*.spec"):
+        spec.unlink()
+        print(f"   Silindi: {spec}")
+
+    print("   ✅ Temizlik tamamlandı")
+
+
+def check_dependencies():
+    """Gerekli araçları kontrol et."""
+    print("🔍 Bağımlılıklar kontrol ediliyor...")
+
+    # PyInstaller
+    try:
+        import PyInstaller
+        print(f"   ✅ PyInstaller {PyInstaller.__version__}")
+    except ImportError:
+        print("   ❌ PyInstaller bulunamadı!")
+        print("   Yüklemek için: pip install pyinstaller")
+        sys.exit(1)
+
+    # PySide6
+    try:
+        import PySide6
+        print(f"   ✅ PySide6 {PySide6.__version__}")
+    except ImportError:
+        print("   ❌ PySide6 bulunamadı!")
+        sys.exit(1)
+
+
+def get_platform_args() -> list:
+    """Platform'a özel PyInstaller argümanları."""
+    system = platform.system()
+
+    common_args = [
+        "--name", APP_NAME,
+        "--windowed",  # GUI app, konsol penceresi yok
+        "--noconfirm",  # Eski build'i üzerine yaz
+        "--clean",  # Temiz build
+        # Hidden imports
+        "--hidden-import", "PySide6.QtCore",
+        "--hidden-import", "PySide6.QtWidgets",
+        "--hidden-import", "PySide6.QtGui",
+        "--hidden-import", "numpy",
+        "--hidden-import", "scipy",
+        "--hidden-import", "lxml",
+        # Data files
+        "--add-data", f"app/ui/styles{os.pathsep}app/ui/styles",
+    ]
+
+    if system == "Darwin":  # macOS
+        return common_args + [
+            "--osx-bundle-identifier", APP_BUNDLE_ID,
+            # macOS için ikon (varsa)
+            # "--icon", "resources/icon.icns",
+        ]
+
+    elif system == "Windows":
+        return common_args + [
+            # Windows için ikon (varsa)
+            # "--icon", "resources/icon.ico",
+            "--version-file", "version_info.txt",
+        ]
+
+    elif system == "Linux":
+        return common_args + [
+            # Linux için
+        ]
+
+    return common_args
+
+
+def create_version_info():
+    """Windows için version info dosyası oluştur."""
+    if platform.system() != "Windows":
+        return
+
+    version_parts = APP_VERSION.split(".")
+    while len(version_parts) < 4:
+        version_parts.append("0")
+
+    version_tuple = ", ".join(version_parts[:4])
+
+    content = f'''# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=({version_tuple}),
+    prodvers=({version_tuple}),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '040904B0',
+          [
+            StringStruct('CompanyName', 'AutoCut'),
+            StringStruct('FileDescription', 'Automatic Silence Removal Tool'),
+            StringStruct('FileVersion', '{APP_VERSION}'),
+            StringStruct('InternalName', '{APP_NAME}'),
+            StringStruct('OriginalFilename', '{APP_NAME}.exe'),
+            StringStruct('ProductName', '{APP_NAME}'),
+            StringStruct('ProductVersion', '{APP_VERSION}'),
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+'''
+    (ROOT_DIR / "version_info.txt").write_text(content)
+
+
+def build():
+    """Uygulamayı build et."""
+    system = platform.system()
+    print(f"🔨 Build başlıyor ({system})...")
+
+    check_dependencies()
+    create_version_info()
+
+    # PyInstaller çalıştır
+    args = ["pyinstaller"] + get_platform_args() + ["main.py"]
+
+    print(f"   Komut: {' '.join(args)}")
+    print()
+
+    result = subprocess.run(args, cwd=ROOT_DIR)
+
+    if result.returncode != 0:
+        print("❌ Build başarısız!")
+        sys.exit(1)
+
+    # Sonuç
+    print()
+    print("=" * 50)
+    print("✅ Build tamamlandı!")
+    print()
+
+    if system == "Darwin":
+        app_path = DIST_DIR / f"{APP_NAME}.app"
+        print(f"   📦 macOS App: {app_path}")
+        print()
+        print("   Çalıştırmak için:")
+        print(f"   open {app_path}")
+        print()
+        print("   DMG oluşturmak için:")
+        print("   pip install dmgbuild")
+        print("   dmgbuild -s dmg_settings.py 'AutoCut' AutoCut.dmg")
+
+    elif system == "Windows":
+        exe_path = DIST_DIR / APP_NAME / f"{APP_NAME}.exe"
+        print(f"   📦 Windows EXE: {exe_path}")
+        print()
+        print("   Installer oluşturmak için NSIS veya Inno Setup kullanabilirsiniz.")
+
+    elif system == "Linux":
+        exe_path = DIST_DIR / APP_NAME / APP_NAME
+        print(f"   📦 Linux Binary: {exe_path}")
+        print()
+        print("   AppImage oluşturmak için:")
+        print("   pip install python-appimage")
+
+    print()
+
+
+def create_dmg_settings():
+    """macOS DMG ayarları dosyası oluştur."""
+    if platform.system() != "Darwin":
+        return
+
+    content = f'''# -*- coding: utf-8 -*-
+# DMG ayarları - dmgbuild için
+
+import os
+
+application = "dist/{APP_NAME}.app"
+appname = os.path.basename(application)
+
+def icon_from_app(app_path):
+    return os.path.join(app_path, "Contents", "Resources", "AutoCut.icns")
+
+# Volume ayarları
+volume_name = "{APP_NAME} {APP_VERSION}"
+format = "UDBZ"  # Sıkıştırılmış
+
+# Pencere ayarları
+size = (640, 480)
+background = None
+
+# İkon pozisyonları
+icon_size = 128
+icon_locations = {{
+    appname: (140, 240),
+    "Applications": (500, 240),
+}}
+
+# Applications symlink
+symlinks = {{"Applications": "/Applications"}}
+'''
+    (ROOT_DIR / "dmg_settings.py").write_text(content)
+    print("   📝 dmg_settings.py oluşturuldu")
+
+
+def main():
+    """Ana giriş noktası."""
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+
+        if arg == "--clean":
+            clean()
+            return
+
+        if arg == "--help" or arg == "-h":
+            print(__doc__)
+            return
+
+    clean()
+    build()
+
+    if platform.system() == "Darwin":
+        create_dmg_settings()
+
+
+if __name__ == "__main__":
+    main()

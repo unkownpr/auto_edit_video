@@ -1,0 +1,37 @@
+# AutoCut - Dependencies
+# Python 3.11+ required
+
+# UI Framework
+PySide6>=6.6.0
+
+# Numerical / Signal Processing
+numpy>=1.26.0
+scipy>=1.11.0
+
+# Media Processing
+ffmpeg-python>=0.2.0
+
+# Video Playback
+python-mpv>=1.0.0
+
+# XML Export (FCPXML)
+lxml>=5.0.0
+
+# Transcription
+faster-whisper>=0.10.0
+
+# Voice Activity Detection (optional)
+webrtcvad>=2.0.10
+
+# Platform directories
+platformdirs>=4.0.0
+
+# ------ Development Dependencies ------
+# pytest>=7.4.0
+# pytest-qt>=4.2.0
+# pytest-cov>=4.1.0
+# ruff>=0.1.0
+# mypy>=1.7.0
+
+# ------ Build Dependencies ------
+# pyinstaller>=6.0.0

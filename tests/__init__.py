@@ -1,0 +1,1 @@
+"""AutoCut test suite."""
