@@ -57,9 +57,11 @@ class Worker(QRunnable):
                 *self.args,
                 **self.kwargs,
             )
-            logger.debug("Worker: emitting result signal")
+            logger.info(f"Worker: task completed, result type: {type(result)}")
+            logger.info(f"Worker: result has {len(result) if hasattr(result, '__len__') else 'N/A'} items")
+            logger.info("Worker: emitting result signal...")
             self.signals.result.emit(result)
-            logger.debug("Worker: result signal emitted")
+            logger.info("Worker: result signal emitted successfully")
         except Exception as e:
             logger.exception(f"Worker error: {e}")
             traceback.print_exc()

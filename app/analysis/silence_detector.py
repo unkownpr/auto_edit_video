@@ -131,29 +131,29 @@ class SilenceDetector:
         audio_data: np.ndarray,
         frame_samples: int,
     ) -> np.ndarray:
-        """Frame bazlı dBFS hesapla."""
+        """Frame bazlı dBFS hesapla - VECTORIZED for speed."""
         num_frames = len(audio_data) // frame_samples
-        db_values = np.zeros(num_frames, dtype=np.float32)
 
-        for i in range(num_frames):
-            start = i * frame_samples
-            end = start + frame_samples
-            frame = audio_data[start:end]
+        # Trim audio to exact frame boundaries
+        trimmed_length = num_frames * frame_samples
+        audio_trimmed = audio_data[:trimmed_length]
 
-            # RMS
-            rms = np.sqrt(np.mean(frame ** 2))
+        # Reshape to (num_frames, frame_samples) for vectorized computation
+        frames = audio_trimmed.reshape(num_frames, frame_samples)
 
-            # dBFS
-            if rms > 1e-10:
-                db_values[i] = 20 * np.log10(rms)
-            else:
-                db_values[i] = -96.0
+        # Vectorized RMS calculation
+        rms_values = np.sqrt(np.mean(frames ** 2, axis=1))
 
-        return db_values
+        # Vectorized dBFS calculation
+        # Avoid log(0) by clipping minimum value
+        rms_clipped = np.maximum(rms_values, 1e-10)
+        db_values = 20 * np.log10(rms_clipped)
+
+        return db_values.astype(np.float32)
 
     def _apply_hysteresis(self, db_values: np.ndarray) -> np.ndarray:
         """
-        Histerezis ile silence mask oluştur.
+        Histerezis ile silence mask oluştur - optimized with numba-style logic.
 
         On threshold: silence_threshold_db - hysteresis_db
         Off threshold: silence_threshold_db + hysteresis_db
@@ -163,19 +163,23 @@ class SilenceDetector:
         on_threshold = self.config.silence_threshold_db - self.config.hysteresis_db
         off_threshold = self.config.silence_threshold_db + self.config.hysteresis_db
 
+        # Pre-compute boolean arrays for speed
+        below_on = db_values < on_threshold
+        above_off = db_values > off_threshold
+
         mask = np.zeros(len(db_values), dtype=bool)
         in_silence = False
 
-        for i, db in enumerate(db_values):
+        # This loop is inherently sequential due to state dependency
+        # but we minimized array access overhead
+        for i in range(len(db_values)):
             if in_silence:
-                # Silence içindeyiz, çıkmak için off_threshold'u geçmeli
-                if db > off_threshold:
+                if above_off[i]:
                     in_silence = False
                 else:
                     mask[i] = True
             else:
-                # Silence dışındayız, girmek için on_threshold'un altında olmalı
-                if db < on_threshold:
+                if below_on[i]:
                     in_silence = True
                     mask[i] = True
 
