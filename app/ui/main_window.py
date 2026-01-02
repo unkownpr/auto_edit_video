@@ -1498,6 +1498,14 @@ class MainWindow(QMainWindow):
 
         output_path = Path(file_path)
 
+        # Safety check: don't overwrite input file
+        if output_path.resolve() == media.file_path.resolve():
+            QMessageBox.warning(self, tr("dialog_warning"), "Çıktı dosyası kaynak dosya ile aynı olamaz!")
+            return
+
+        logger.info(f"Input: {media.file_path}")
+        logger.info(f"Output: {output_path}")
+
         # Calculate segments to keep (inverse of cuts)
         duration = media.duration
         segments = []
@@ -1519,11 +1527,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("dialog_warning"), "Tutulacak segment kalmadı!")
             return
 
+        # Calculate total duration of segments
+        total_segment_duration = sum(end - start for start, end in segments)
+        total_cut_duration = sum(c.duration for c in enabled_cuts)
+
+        logger.info(f"=== RENDER INFO ===")
+        logger.info(f"Original duration: {duration:.2f}s")
+        logger.info(f"Total cut duration: {total_cut_duration:.2f}s")
+        logger.info(f"Expected output duration: {total_segment_duration:.2f}s")
         logger.info(f"Rendering video with {len(segments)} segments (removing {len(enabled_cuts)} cuts)")
-        for i, (start, end) in enumerate(segments[:5]):
-            logger.info(f"  Segment {i+1}: {start:.2f}s - {end:.2f}s")
-        if len(segments) > 5:
-            logger.info(f"  ... and {len(segments) - 5} more segments")
+        for i, (start, end) in enumerate(segments[:10]):
+            logger.info(f"  Segment {i+1}: {start:.2f}s - {end:.2f}s (duration: {end-start:.2f}s)")
+        if len(segments) > 10:
+            logger.info(f"  ... and {len(segments) - 10} more segments")
 
         self._show_progress_dialog("Video oluşturuluyor...", tr("btn_cancel"))
 
@@ -1531,17 +1547,31 @@ class MainWindow(QMainWindow):
             from app.media.ffmpeg import FFmpegWrapper
             import tempfile
             import os
+            import uuid
 
             ffmpeg = FFmpegWrapper()
             cache_dir = Settings.get_cache_dir()
 
+            # Unique ID for this render session to avoid conflicts
+            session_id = uuid.uuid4().hex[:8]
+
             progress_callback(5, "Segmentler kesiliyor...")
 
             # Create a concat file for FFmpeg
-            concat_file = cache_dir / f"concat_{media.file_path.stem}.txt"
+            concat_file = cache_dir / f"concat_{session_id}.txt"
             segment_files = []
 
             try:
+                # Clean up any old segment and concat files first
+                logger.info("Cleaning up old temp files...")
+                for pattern in ["segment_*.mp4", "segment_*.mov", "segment_*.mkv", "concat_*.txt"]:
+                    for old_file in cache_dir.glob(pattern):
+                        try:
+                            old_file.unlink()
+                            logger.debug(f"Deleted: {old_file}")
+                        except:
+                            pass
+
                 # Extract each segment
                 for i, (start, end) in enumerate(segments):
                     progress_callback(
@@ -1549,15 +1579,16 @@ class MainWindow(QMainWindow):
                         f"Segment {i+1}/{len(segments)} kesiliyor..."
                     )
 
-                    segment_path = cache_dir / f"segment_{i:04d}{media.file_path.suffix}"
+                    segment_path = cache_dir / f"segment_{session_id}_{i:04d}{media.file_path.suffix}"
                     segment_files.append(segment_path)
 
                     # Use FFmpeg to extract segment
+                    # -ss after -i for frame-accurate cutting
                     cmd = [
                         ffmpeg.ffmpeg_path,
                         "-y",
-                        "-ss", str(start),
                         "-i", str(media.file_path),
+                        "-ss", str(start),
                         "-t", str(end - start),
                         "-c", "copy",
                         "-avoid_negative_ts", "make_zero",
@@ -1572,14 +1603,31 @@ class MainWindow(QMainWindow):
                     )
 
                     if result.returncode != 0:
+                        logger.error(f"FFmpeg segment error: {result.stderr}")
                         raise RuntimeError(f"FFmpeg segment error: {result.stderr}")
 
                 progress_callback(80, "Segmentler birleştiriliyor...")
 
-                # Create concat file
+                # Verify all segments exist
+                for seg_path in segment_files:
+                    if not seg_path.exists():
+                        raise RuntimeError(f"Segment file missing: {seg_path}")
+                    logger.info(f"Segment ready: {seg_path.name} ({seg_path.stat().st_size} bytes)")
+
+                # Create concat file with only our session's segments
+                logger.info(f"Creating concat file: {concat_file}")
                 with open(concat_file, "w") as f:
                     for seg_path in segment_files:
                         f.write(f"file '{seg_path}'\n")
+
+                # Log concat file contents
+                with open(concat_file, "r") as f:
+                    logger.info(f"Concat file contents:\n{f.read()}")
+
+                # Delete output file if exists to ensure clean start
+                if output_path.exists():
+                    logger.info(f"Deleting existing output: {output_path}")
+                    output_path.unlink()
 
                 # Concatenate segments
                 cmd = [
@@ -1592,6 +1640,7 @@ class MainWindow(QMainWindow):
                     str(output_path)
                 ]
 
+                logger.info(f"Running concat: {' '.join(cmd)}")
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -1599,7 +1648,15 @@ class MainWindow(QMainWindow):
                 )
 
                 if result.returncode != 0:
+                    logger.error(f"FFmpeg concat error: {result.stderr}")
                     raise RuntimeError(f"FFmpeg concat error: {result.stderr}")
+
+                # Verify output
+                if output_path.exists():
+                    output_size = output_path.stat().st_size
+                    logger.info(f"Output created: {output_path} ({output_size} bytes)")
+                else:
+                    raise RuntimeError("Output file was not created")
 
                 progress_callback(95, "Temizleniyor...")
 
