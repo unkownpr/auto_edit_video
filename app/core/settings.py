@@ -140,9 +140,10 @@ class Settings:
     max_waveform_cache_mb: int = 500
 
     # Transcript
-    default_transcript_model: str = "faster-whisper-medium"
+    default_transcript_model: str = "faster-whisper-base"  # Changed from medium for speed
     transcript_language: str = "auto"
     gpu_acceleration: bool = True
+    transcript_beam_size: int = 1  # 1=fastest, 5=more accurate
 
     # Export
     default_export_format: str = "fcpxml"  # fcpxml, edl, xmeml

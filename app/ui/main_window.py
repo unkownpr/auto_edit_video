@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         self._progress_active: bool = False  # Flag to safely ignore progress updates after close
         self._video_path: Optional[Path] = None
         self._updating_position: bool = False  # Prevent recursion between video and timeline
+        self._active_workers: list = []  # Keep workers alive until callbacks complete
 
         # Dil ayarı
         if self.settings.language:
@@ -119,6 +120,30 @@ class MainWindow(QMainWindow):
             self.autosave_timer = QTimer(self)
             self.autosave_timer.timeout.connect(self._autosave)
             self.autosave_timer.start(self.settings.autosave_interval_sec * 1000)
+
+    def _start_worker(self, worker: Worker):
+        """Start a worker and keep it alive until finished.
+
+        This prevents garbage collection of worker objects while signals are still
+        being processed, which can cause segmentation faults.
+        """
+        # Keep reference to prevent garbage collection
+        self._active_workers.append(worker)
+
+        # Remove from list when finished (after all signals processed)
+        def cleanup():
+            try:
+                self._active_workers.remove(worker)
+                logger.debug(f"Worker removed from active list, {len(self._active_workers)} remaining")
+            except ValueError:
+                pass  # Already removed
+
+        # Use QTimer.singleShot to defer cleanup, ensuring signals complete first
+        worker.signals.finished.connect(lambda: QTimer.singleShot(100, cleanup))
+
+        # Start the worker
+        self.thread_pool.start(worker)
+        logger.debug(f"Worker started, {len(self._active_workers)} active workers")
 
     def _set_app_icon(self):
         """Set application icon."""
@@ -1048,7 +1073,7 @@ class MainWindow(QMainWindow):
         worker.signals.progress.connect(self._update_progress, Qt.QueuedConnection)
         worker.signals.result.connect(on_complete, Qt.QueuedConnection)
         worker.signals.error.connect(on_error, Qt.QueuedConnection)
-        self.thread_pool.start(worker)
+        self._start_worker(worker)
 
     def run_analysis(self):
         """Sessizlik analizi çalıştır."""
@@ -1147,9 +1172,7 @@ class MainWindow(QMainWindow):
         worker.signals.error.connect(safe_on_error)
         worker.signals.finished.connect(lambda: logger.info("Analysis worker finished signal received"))
 
-        # Keep reference to prevent garbage collection
-        self._current_worker = worker
-        self.thread_pool.start(worker)
+        self._start_worker(worker)
         logger.info("Analysis worker started")
 
     def _show_export_dialog(self):
@@ -1457,13 +1480,55 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("dialog_warning"), tr("error_no_audio"))
             return
 
+        # Model seçim dialogu
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Transkripsiyon Ayarları")
+        dialog.setMinimumWidth(400)
+
+        layout = QVBoxLayout(dialog)
+
+        # Model seçimi
+        model_group = QGroupBox("Model Seçimi")
+        model_layout = QVBoxLayout(model_group)
+
+        model_combo = QComboBox()
+        models = [
+            ("tiny", "Tiny - En Hızlı (~10x)", "~1 dakika / 10 dk video"),
+            ("base", "Base - Hızlı (~5x)", "~2 dakika / 10 dk video (Önerilen)"),
+            ("small", "Small - Dengeli (~2x)", "~5 dakika / 10 dk video"),
+            ("medium", "Medium - Doğru", "~10 dakika / 10 dk video"),
+            ("large-v3", "Large - En Doğru", "~20+ dakika / 10 dk video"),
+        ]
+        for model_id, name, desc in models:
+            model_combo.addItem(f"{name} - {desc}", model_id)
+        model_combo.setCurrentIndex(1)  # Default: base
+        model_layout.addWidget(model_combo)
+
+        layout.addWidget(model_group)
+
+        # Info
+        info_label = QLabel("💡 Hız CPU'da hesaplanmıştır. GPU varsa çok daha hızlı olur.")
+        info_label.setStyleSheet("color: #888; font-size: 11px; padding: 8px;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        selected_model = model_combo.currentData()
+
         self._show_progress_dialog(tr("progress_transcribing"), tr("btn_cancel"))
 
         def do_work(progress_callback):
             from app.transcript.transcriber import transcribe_audio, TranscriptConfig, ModelSize
 
             # Convert string to ModelSize enum
-            model_str = self.settings.default_transcript_model.replace("faster-whisper-", "")
             model_size_map = {
                 "tiny": ModelSize.TINY,
                 "base": ModelSize.BASE,
@@ -1472,13 +1537,19 @@ class MainWindow(QMainWindow):
                 "large": ModelSize.LARGE,
                 "large-v3": ModelSize.LARGE,
             }
-            model_size = model_size_map.get(model_str, ModelSize.MEDIUM)
+            model_size = model_size_map.get(selected_model, ModelSize.BASE)
 
+            # Optimized config for speed
             config = TranscriptConfig(
                 model_size=model_size,
                 device="auto" if self.settings.gpu_acceleration else "cpu",
+                beam_size=1 if model_size in (ModelSize.TINY, ModelSize.BASE) else 3,
+                best_of=1,  # Fastest
+                word_timestamps=False,  # Faster without word-level timestamps
+                vad_filter=True,  # Skip silent parts
             )
 
+            progress_callback(5, f"Model yükleniyor: {model_size.value}...")
             return transcribe_audio(
                 media.audio_path,
                 config,
@@ -1501,7 +1572,7 @@ class MainWindow(QMainWindow):
         worker.signals.progress.connect(self._update_progress, Qt.QueuedConnection)
         worker.signals.result.connect(on_complete, Qt.QueuedConnection)
         worker.signals.error.connect(on_error, Qt.QueuedConnection)
-        self.thread_pool.start(worker)
+        self._start_worker(worker)
 
     def _render_video_without_silences(self):
         """Sessiz alanları silip yeni video oluştur."""
@@ -1735,7 +1806,7 @@ class MainWindow(QMainWindow):
         worker.signals.progress.connect(self._update_progress, Qt.QueuedConnection)
         worker.signals.result.connect(on_complete, Qt.QueuedConnection)
         worker.signals.error.connect(on_error, Qt.QueuedConnection)
-        self.thread_pool.start(worker)
+        self._start_worker(worker)
 
     def _autosave(self):
         """Otomatik kaydet."""

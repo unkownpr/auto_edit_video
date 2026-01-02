@@ -31,13 +31,48 @@ class SilenceDetector:
     Algoritma:
     1. Audio'yu frame'lere böl (frame_ms)
     2. Her frame için RMS -> dBFS hesapla
-    3. Histerezis ile silence on/off kararı ver
-    4. Ardışık silence frame'lerini segment'lere birleştir
-    5. min_duration filtresi uygula
-    6. Yakın segment'leri merge et
-    7. Padding ekle
+    3. (Opsiyonel) Adaptif eşik hesapla
+    4. Histerezis ile silence on/off kararı ver
+    5. Ardışık silence frame'lerini segment'lere birleştir
+    6. min_duration filtresi uygula
+    7. Yakın segment'leri merge et
+    8. Padding ekle
     """
     config: AnalysisConfig
+
+    def _calculate_adaptive_threshold(self, db_values: np.ndarray) -> float:
+        """
+        Audio seviyesine göre adaptif eşik hesapla.
+
+        Fikir: En sessiz %20'lik kısmın ortalaması + margin = sessizlik eşiği
+        Bu sayede her ses dosyası için optimize edilmiş eşik bulunur.
+        """
+        # Alt %20 percentile (sessiz kısımlar)
+        noise_floor = np.percentile(db_values, 20)
+
+        # Üst %80 percentile (konuşma/ses kısımları)
+        signal_level = np.percentile(db_values, 80)
+
+        # Eşik: noise floor ile signal arasında dinamik bir nokta
+        # noise_floor'a yakın ama biraz üstünde
+        dynamic_range = signal_level - noise_floor
+
+        if dynamic_range < 10:
+            # Çok düşük dinamik aralık - muhtemelen çok sessiz veya çok gürültülü
+            # Kullanıcı eşiğini kullan
+            return self.config.silence_threshold_db
+
+        # Adaptif eşik: noise floor + dinamik aralığın %25'i
+        adaptive_threshold = noise_floor + (dynamic_range * 0.25)
+
+        # Kullanıcı eşiği ile karşılaştır, daha yüksek olanı al (daha az agresif)
+        final_threshold = max(adaptive_threshold, self.config.silence_threshold_db)
+
+        logger.info(f"Adaptive threshold: noise_floor={noise_floor:.1f}dB, "
+                   f"signal={signal_level:.1f}dB, range={dynamic_range:.1f}dB, "
+                   f"adaptive={adaptive_threshold:.1f}dB, final={final_threshold:.1f}dB")
+
+        return final_threshold
 
     def detect(
         self,
@@ -83,10 +118,16 @@ class SilenceDetector:
         db_values = self._compute_frame_db(audio_data, frame_samples)
 
         if progress_callback:
+            progress_callback(0.25)
+
+        # 2. Adaptif eşik hesapla (opsiyonel ama daha doğru sonuç verir)
+        adaptive_threshold = self._calculate_adaptive_threshold(db_values)
+
+        if progress_callback:
             progress_callback(0.3)
 
-        # 2. Histerezis ile silence mask oluştur
-        silence_mask = self._apply_hysteresis(db_values)
+        # 3. Histerezis ile silence mask oluştur
+        silence_mask = self._apply_hysteresis(db_values, threshold_override=adaptive_threshold)
 
         if progress_callback:
             progress_callback(0.5)
@@ -151,7 +192,11 @@ class SilenceDetector:
 
         return db_values.astype(np.float32)
 
-    def _apply_hysteresis(self, db_values: np.ndarray) -> np.ndarray:
+    def _apply_hysteresis(
+        self,
+        db_values: np.ndarray,
+        threshold_override: Optional[float] = None,
+    ) -> np.ndarray:
         """
         Histerezis ile silence mask oluştur - optimized with numba-style logic.
 
@@ -160,8 +205,9 @@ class SilenceDetector:
 
         Bu sayede threshold etrafında oscillation önlenir.
         """
-        on_threshold = self.config.silence_threshold_db - self.config.hysteresis_db
-        off_threshold = self.config.silence_threshold_db + self.config.hysteresis_db
+        base_threshold = threshold_override if threshold_override is not None else self.config.silence_threshold_db
+        on_threshold = base_threshold - self.config.hysteresis_db
+        off_threshold = base_threshold + self.config.hysteresis_db
 
         # Pre-compute boolean arrays for speed
         below_on = db_values < on_threshold

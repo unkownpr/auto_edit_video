@@ -44,18 +44,23 @@ class ModelSize(Enum):
 class TranscriptConfig:
     """Transkript konfigürasyonu."""
     backend: TranscriptBackend = TranscriptBackend.FASTER_WHISPER
-    model_size: ModelSize = ModelSize.MEDIUM
+    model_size: ModelSize = ModelSize.BASE  # Changed from MEDIUM for speed
     language: Optional[str] = None  # None = auto-detect
-    word_timestamps: bool = True
+    word_timestamps: bool = False  # Disabled by default for speed
     device: str = "auto"  # auto, cpu, cuda
     compute_type: str = "auto"  # auto, int8, float16, float32
 
-    # VAD filter
+    # VAD filter - helps speed by skipping silent parts
     vad_filter: bool = True
-    vad_min_silence_duration_ms: int = 500
+    vad_min_silence_duration_ms: int = 300  # Reduced for faster processing
 
     # Output
-    include_word_timestamps: bool = True
+    include_word_timestamps: bool = False  # Disabled for speed
+
+    # Performance options
+    beam_size: int = 1  # 1 = greedy (fastest), 5 = default beam search
+    best_of: int = 1  # Number of candidates (1 = fastest)
+    num_workers: int = 4  # Parallel workers for faster-whisper
 
 
 class Transcriber:
@@ -178,6 +183,10 @@ class Transcriber:
             vad_parameters={
                 "min_silence_duration_ms": self.config.vad_min_silence_duration_ms,
             },
+            beam_size=self.config.beam_size,
+            best_of=self.config.best_of,
+            without_timestamps=False,
+            condition_on_previous_text=False,  # Faster, less context
         )
 
         detected_language = info.language
