@@ -49,8 +49,10 @@ def main():
     # Qt Application
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)
+    app.setApplicationDisplayName(__app_name__)  # This shows in macOS dock/menu
     app.setApplicationVersion(__version__)
     app.setOrganizationName("AutoCut")
+    app.setDesktopFileName("autocut")  # For Linux .desktop file
 
     # Default font
     font = app.font()

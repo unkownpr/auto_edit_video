@@ -350,7 +350,7 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.analyze_btn)
 
         # Delete silent areas button - renders new video
-        self.render_btn = QPushButton("✂ Sessiz Alanları Sil")
+        self.render_btn = QPushButton(tr("btn_render_video"))
         self.render_btn.setObjectName("primaryButton")
         self.render_btn.setEnabled(False)
         self.render_btn.clicked.connect(self._render_video_without_silences)
@@ -1138,17 +1138,14 @@ class MainWindow(QMainWindow):
 
                 # Show message box with summary
                 total_cut_duration = sum(c.duration for c in cuts if c.enabled)
-                msg = f"{len(cuts)} sessiz bölge bulundu!\n\n"
-                msg += f"Toplam kesilecek süre: {self._format_time(total_cut_duration)}\n"
-                msg += f"İlk 3 kesim:\n"
-                for cut in cuts[:3]:
-                    msg += f"  • {self._format_time(cut.start)} - {self._format_time(cut.end)}\n"
-                QMessageBox.information(self, "Analiz Tamamlandı", msg)
+                msg = tr("analysis_complete_msg", len(cuts), self._format_time(total_cut_duration))
+
+                QMessageBox.information(self, tr("analysis_complete_title"), msg)
 
                 self.statusbar.showMessage(tr("status_found_cuts", len(cuts)))
             except Exception as e:
                 logger.exception(f"Error in on_complete: {e}")
-                QMessageBox.critical(self, "Hata", f"Analiz sonucu işlenirken hata: {e}")
+                QMessageBox.critical(self, tr("dialog_error"), tr("analysis_error", str(e)))
 
         def on_error(error):
             self._close_progress_dialog()
@@ -1482,7 +1479,7 @@ class MainWindow(QMainWindow):
 
         # Model seçim dialogu
         dialog = QDialog(self)
-        dialog.setWindowTitle("Transkripsiyon Ayarları")
+        dialog.setWindowTitle(tr("transcription_title"))
         dialog.setMinimumWidth(450)
 
         layout = QVBoxLayout(dialog)
@@ -1491,7 +1488,7 @@ class MainWindow(QMainWindow):
         from app.transcript.transcriber import is_model_downloaded
 
         # Model seçimi
-        model_group = QGroupBox("Model Seçimi")
+        model_group = QGroupBox(tr("transcription_model_select"))
         model_layout = QVBoxLayout(model_group)
 
         model_combo = QComboBox()
@@ -1517,14 +1514,14 @@ class MainWindow(QMainWindow):
 
         # Download status info
         downloaded_count = sum(1 for m, _, _ in models if is_model_downloaded(m))
-        status_label = QLabel(f"✅ = İndirilmiş ({downloaded_count}/5)  |  ⬇️ = İlk kullanımda indirilecek")
+        status_label = QLabel(f"✅ = {tr('transcription_downloaded')} ({downloaded_count}/5)  |  ⬇️ = {tr('transcription_will_download')}")
         status_label.setStyleSheet("color: #888; font-size: 10px; padding: 4px;")
         model_layout.addWidget(status_label)
 
         layout.addWidget(model_group)
 
         # Info
-        info_label = QLabel("💡 Hız CPU'da hesaplanmıştır. GPU varsa çok daha hızlı olur.")
+        info_label = QLabel(f"💡 {tr('transcription_speed_hint')}")
         info_label.setStyleSheet("color: #888; font-size: 11px; padding: 8px;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -1598,13 +1595,13 @@ class MainWindow(QMainWindow):
             return
 
         if not self.project.cuts:
-            QMessageBox.warning(self, tr("dialog_warning"), "Önce ses analizi yapın!")
+            QMessageBox.warning(self, tr("dialog_warning"), tr("render_analyze_first"))
             return
 
         # Get enabled cuts
         enabled_cuts = [c for c in self.project.cuts if c.enabled]
         if not enabled_cuts:
-            QMessageBox.warning(self, tr("dialog_warning"), "Kesilecek sessiz alan yok!")
+            QMessageBox.warning(self, tr("dialog_warning"), tr("render_no_cuts"))
             return
 
         # Ask for output file
@@ -1612,7 +1609,7 @@ class MainWindow(QMainWindow):
         default_name = f"{media.file_path.stem}_edited{media.file_path.suffix}"
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Video Kaydet",
+            tr("render_save_title"),
             default_name,
             f"Video Files (*{media.file_path.suffix});;All Files (*)"
         )
@@ -1624,7 +1621,7 @@ class MainWindow(QMainWindow):
 
         # Safety check: don't overwrite input file
         if output_path.resolve() == media.file_path.resolve():
-            QMessageBox.warning(self, tr("dialog_warning"), "Çıktı dosyası kaynak dosya ile aynı olamaz!")
+            QMessageBox.warning(self, tr("dialog_warning"), tr("render_same_file"))
             return
 
         logger.info(f"Input: {media.file_path}")
@@ -1648,7 +1645,7 @@ class MainWindow(QMainWindow):
             segments.append((last_end, duration))
 
         if not segments:
-            QMessageBox.warning(self, tr("dialog_warning"), "Tutulacak segment kalmadı!")
+            QMessageBox.warning(self, tr("dialog_warning"), tr("render_no_segments"))
             return
 
         # Calculate total duration of segments
@@ -1665,7 +1662,7 @@ class MainWindow(QMainWindow):
         if len(segments) > 10:
             logger.info(f"  ... and {len(segments) - 10} more segments")
 
-        self._show_progress_dialog("Video oluşturuluyor...", tr("btn_cancel"))
+        self._show_progress_dialog(tr("render_progress"), tr("btn_cancel"))
 
         def do_work(progress_callback):
             from app.media.ffmpeg import FFmpegWrapper
@@ -1679,7 +1676,7 @@ class MainWindow(QMainWindow):
             # Unique ID for this render session to avoid conflicts
             session_id = uuid.uuid4().hex[:8]
 
-            progress_callback(5, "Segmentler kesiliyor...")
+            progress_callback(5, tr("render_cutting"))
 
             # Create a concat file for FFmpeg
             concat_file = cache_dir / f"concat_{session_id}.txt"
@@ -1700,7 +1697,7 @@ class MainWindow(QMainWindow):
                 for i, (start, end) in enumerate(segments):
                     progress_callback(
                         5 + int((i / len(segments)) * 70),
-                        f"Segment {i+1}/{len(segments)} kesiliyor..."
+                        tr("render_segment_progress", i+1, len(segments))
                     )
 
                     segment_path = cache_dir / f"segment_{session_id}_{i:04d}{media.file_path.suffix}"
@@ -1731,7 +1728,7 @@ class MainWindow(QMainWindow):
                         logger.error(f"FFmpeg segment error: {result.stderr}")
                         raise RuntimeError(f"FFmpeg segment error: {result.stderr}")
 
-                progress_callback(80, "Segmentler birleştiriliyor...")
+                progress_callback(80, tr("render_merging"))
 
                 # Verify all segments exist
                 for seg_path in segment_files:
@@ -1784,7 +1781,7 @@ class MainWindow(QMainWindow):
                 else:
                     raise RuntimeError("Output file was not created")
 
-                progress_callback(95, "Temizleniyor...")
+                progress_callback(95, tr("render_cleaning"))
 
             finally:
                 # Cleanup temp files
@@ -1800,7 +1797,7 @@ class MainWindow(QMainWindow):
                 except:
                     pass
 
-            progress_callback(100, "Tamamlandı!")
+            progress_callback(100, tr("render_complete"))
             return output_path
 
         def on_complete(result_path):
@@ -1809,17 +1806,17 @@ class MainWindow(QMainWindow):
             # Calculate saved time
             total_cut = sum(c.duration for c in enabled_cuts)
 
-            msg = f"Video başarıyla oluşturuldu!\n\n"
-            msg += f"Kayıt: {result_path}\n\n"
-            msg += f"Kaldırılan süre: {self._format_time(total_cut)}\n"
-            msg += f"Yeni video süresi: {self._format_time(media.duration - total_cut)}"
+            msg = tr("render_success_msg",
+                     result_path,
+                     self._format_time(total_cut),
+                     self._format_time(media.duration - total_cut))
 
-            QMessageBox.information(self, "Video Hazır", msg)
-            self.statusbar.showMessage(f"Video kaydedildi: {result_path.name}")
+            QMessageBox.information(self, tr("render_success_title"), msg)
+            self.statusbar.showMessage(tr("status_saved", result_path.name))
 
         def on_error(error):
             self._close_progress_dialog()
-            QMessageBox.critical(self, tr("dialog_error"), f"Video oluşturulurken hata: {error}")
+            QMessageBox.critical(self, tr("dialog_error"), tr("render_error", error))
 
         worker = Worker(do_work)
         worker.signals.progress.connect(self._update_progress, Qt.QueuedConnection)

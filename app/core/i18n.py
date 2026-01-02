@@ -181,6 +181,35 @@ TRANSLATIONS = {
         # About
         "about_title": "About AutoCut",
         "about_text": "AutoCut v{0}\n\nAutomatic silence removal and NLE export tool.\n\nSupports:\n• Final Cut Pro (FCPXML)\n• Adobe Premiere Pro (XML)\n• DaVinci Resolve (EDL)\n\n© 2024 AutoCut",
+
+        # Render / Export Video
+        "btn_render_video": "✂ Remove Silent Areas",
+        "render_analyze_first": "Please analyze audio first!",
+        "render_no_cuts": "No silence regions to cut!",
+        "render_same_file": "Output file cannot be the same as input file!",
+        "render_no_segments": "No segments left to keep!",
+        "render_progress": "Creating video...",
+        "render_cutting": "Cutting segments...",
+        "render_segment_progress": "Cutting segment {0}/{1}...",
+        "render_merging": "Merging segments...",
+        "render_cleaning": "Cleaning up...",
+        "render_complete": "Complete!",
+        "render_success_title": "Video Ready",
+        "render_success_msg": "Video created successfully!\n\nSaved: {0}\n\nRemoved duration: {1}\nNew video duration: {2}",
+        "render_error": "Error creating video: {0}",
+        "render_save_title": "Save Video",
+
+        # Analysis
+        "analysis_complete_title": "Analysis Complete",
+        "analysis_complete_msg": "{0} silence regions found!\n\nTotal duration to cut: {1}",
+        "analysis_error": "Error processing analysis: {0}",
+
+        # Transcription Dialog
+        "transcription_title": "Transcription Settings",
+        "transcription_model_select": "Model Selection",
+        "transcription_downloaded": "Downloaded",
+        "transcription_will_download": "Will download on first use",
+        "transcription_speed_hint": "Speed calculated for CPU. GPU is much faster if available.",
     },
 
     "tr": {
@@ -347,6 +376,35 @@ TRANSLATIONS = {
         # About
         "about_title": "AutoCut Hakkında",
         "about_text": "AutoCut v{0}\n\nOtomatik sessizlik kaldırma ve NLE dışa aktarma aracı.\n\nDesteklenen formatlar:\n• Final Cut Pro (FCPXML)\n• Adobe Premiere Pro (XML)\n• DaVinci Resolve (EDL)\n\n© 2024 AutoCut",
+
+        # Render / Export Video
+        "btn_render_video": "✂ Sessiz Alanları Sil",
+        "render_analyze_first": "Önce ses analizi yapın!",
+        "render_no_cuts": "Kesilecek sessiz alan yok!",
+        "render_same_file": "Çıktı dosyası kaynak dosya ile aynı olamaz!",
+        "render_no_segments": "Tutulacak segment kalmadı!",
+        "render_progress": "Video oluşturuluyor...",
+        "render_cutting": "Segmentler kesiliyor...",
+        "render_segment_progress": "Segment {0}/{1} kesiliyor...",
+        "render_merging": "Segmentler birleştiriliyor...",
+        "render_cleaning": "Temizleniyor...",
+        "render_complete": "Tamamlandı!",
+        "render_success_title": "Video Hazır",
+        "render_success_msg": "Video başarıyla oluşturuldu!\n\nKayıt: {0}\n\nKaldırılan süre: {1}\nYeni video süresi: {2}",
+        "render_error": "Video oluşturulurken hata: {0}",
+        "render_save_title": "Video Kaydet",
+
+        # Analysis
+        "analysis_complete_title": "Analiz Tamamlandı",
+        "analysis_complete_msg": "{0} sessiz bölge bulundu!\n\nToplam kesilecek süre: {1}",
+        "analysis_error": "Analiz sonucu işlenirken hata: {0}",
+
+        # Transcription Dialog
+        "transcription_title": "Transkripsiyon Ayarları",
+        "transcription_model_select": "Model Seçimi",
+        "transcription_downloaded": "İndirilmiş",
+        "transcription_will_download": "İlk kullanımda indirilecek",
+        "transcription_speed_hint": "Hız CPU için hesaplanmıştır. GPU varsa çok daha hızlı olur.",
     },
 }
 
