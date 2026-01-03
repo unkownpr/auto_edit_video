@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBu
 from PySide6.QtGui import QImage, QPixmap
 
 from app.core.models import Cut
+from app.core.i18n import tr
 
 logger = logging.getLogger(__name__)
 
@@ -104,19 +105,19 @@ class VideoPlayer(QWidget):
         btn_layout.addWidget(self._time_label)
 
         # Play button
-        self._play_btn = QPushButton("▶ Oynat")
+        self._play_btn = QPushButton(tr("player_play"))
         self._play_btn.setFixedWidth(100)
         self._play_btn.clicked.connect(self.toggle_playback)
         btn_layout.addWidget(self._play_btn)
 
         # Stop button
-        self._stop_btn = QPushButton("⏹ Durdur")
+        self._stop_btn = QPushButton(tr("player_stop"))
         self._stop_btn.setFixedWidth(80)
         self._stop_btn.clicked.connect(self.stop)
         btn_layout.addWidget(self._stop_btn)
 
         # Skip cuts checkbox
-        self._skip_cuts_btn = QPushButton("✂ Kesimleri Atla: AÇIK")
+        self._skip_cuts_btn = QPushButton(tr("player_skip_cuts_on"))
         self._skip_cuts_btn.setCheckable(True)
         self._skip_cuts_btn.setChecked(True)
         self._skip_cuts_btn.clicked.connect(self._toggle_skip_cuts)
@@ -171,9 +172,9 @@ class VideoPlayer(QWidget):
         """Toggle cut skipping."""
         self._skip_cuts = self._skip_cuts_btn.isChecked()
         if self._skip_cuts:
-            self._skip_cuts_btn.setText("✂ Kesimleri Atla: AÇIK")
+            self._skip_cuts_btn.setText(tr("player_skip_cuts_on"))
         else:
-            self._skip_cuts_btn.setText("✂ Kesimleri Atla: KAPALI")
+            self._skip_cuts_btn.setText(tr("player_skip_cuts_off"))
 
     def play(self):
         """Start playback."""
@@ -184,14 +185,14 @@ class VideoPlayer(QWidget):
         # Start timer at frame rate interval
         interval_ms = int(1000 / self._fps)
         self._timer.start(interval_ms)
-        self._play_btn.setText("⏸ Duraklat")
+        self._play_btn.setText(tr("player_pause"))
         self.playback_started.emit()
 
     def pause(self):
         """Pause playback."""
         self._is_playing = False
         self._timer.stop()
-        self._play_btn.setText("▶ Oynat")
+        self._play_btn.setText(tr("player_play"))
         self.playback_paused.emit()
 
     def toggle_playback(self):

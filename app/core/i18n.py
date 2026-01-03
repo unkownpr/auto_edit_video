@@ -55,6 +55,13 @@ TRANSLATIONS = {
         "toolbar_export": "Export",
         "toolbar_settings": "Settings",
 
+        # Video Player
+        "player_play": "▶ Play",
+        "player_pause": "⏸ Pause",
+        "player_stop": "⏹ Stop",
+        "player_skip_cuts_on": "✂ Skip Cuts: ON",
+        "player_skip_cuts_off": "✂ Skip Cuts: OFF",
+
         # Panels
         "panel_media": "Media",
         "panel_settings": "Detection Settings",
@@ -321,6 +328,13 @@ TRANSLATIONS = {
         "toolbar_analyze": "Analiz Et",
         "toolbar_export": "Dışa Aktar",
         "toolbar_settings": "Ayarlar",
+
+        # Video Player
+        "player_play": "▶ Oynat",
+        "player_pause": "⏸ Duraklat",
+        "player_stop": "⏹ Durdur",
+        "player_skip_cuts_on": "✂ Kesimleri Atla: AÇIK",
+        "player_skip_cuts_off": "✂ Kesimleri Atla: KAPALI",
 
         # Panels
         "panel_media": "Medya",
