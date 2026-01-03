@@ -207,8 +207,10 @@ class SettingsDialog(QDialog):
                 background-color: #3a3a3c;
                 color: #ffffff;
                 border: 1px solid #555;
-                border-radius: 4px;
-                padding: 6px 12px;
+                border-radius: 6px;
+                padding: 10px 16px;
+                font-size: 13px;
+                min-height: 20px;
             }
             QPushButton:hover {
                 background-color: #4a4a4c;
