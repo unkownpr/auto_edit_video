@@ -98,7 +98,8 @@ class SettingsDialog(QDialog):
         self._download_thread: Optional[ModelDownloadThread] = None
 
         self.setWindowTitle(tr("settings_title"))
-        self.setMinimumSize(600, 500)
+        self.setMinimumSize(700, 600)
+        self.resize(750, 650)
         self.setModal(True)
 
         self._setup_ui()
@@ -125,10 +126,13 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(self.tabs)
 
-        # Buttons
+        # Buttons with translated text
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Apply
         )
+        buttons.button(QDialogButtonBox.Ok).setText(tr("btn_ok"))
+        buttons.button(QDialogButtonBox.Cancel).setText(tr("btn_cancel"))
+        buttons.button(QDialogButtonBox.Apply).setText(tr("btn_apply"))
         buttons.accepted.connect(self._save_and_close)
         buttons.rejected.connect(self.reject)
         buttons.button(QDialogButtonBox.Apply).clicked.connect(self._apply_settings)
@@ -166,7 +170,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(autosave_group)
 
         # Proxy
-        proxy_group = QGroupBox("Proxy")
+        proxy_group = QGroupBox(tr("settings_proxy_group"))
         proxy_layout = QFormLayout(proxy_group)
 
         self.proxy_check = QCheckBox(tr("settings_proxy"))
@@ -178,102 +182,129 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(proxy_group)
 
+        # Tour
+        tour_group = QGroupBox(tr("tour_title"))
+        tour_layout = QVBoxLayout(tour_group)
+
+        self.restart_tour_btn = QPushButton(tr("settings_restart_tour"))
+        self.restart_tour_btn.clicked.connect(self._restart_tour)
+        tour_layout.addWidget(self.restart_tour_btn)
+
+        layout.addWidget(tour_group)
+
         layout.addStretch()
         return widget
+
+    def _restart_tour(self):
+        """Turu yeniden başlat."""
+        from app.ui.tour_dialog import TourDialog
+        tour = TourDialog(self)
+        tour.exec()
 
     def _create_transcription_tab(self) -> QWidget:
         """Transkripsiyon ayarları sekmesi."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setSpacing(16)
 
         # Gemini API Settings
         gemini_group = QGroupBox("Gemini API")
-        gemini_layout = QVBoxLayout(gemini_group)
-        gemini_layout.setSpacing(12)
+        gemini_form = QFormLayout(gemini_group)
+        gemini_form.setSpacing(12)
+        gemini_form.setContentsMargins(12, 16, 12, 12)
 
+        # Enable checkbox
         self.gemini_enabled_check = QCheckBox(tr("settings_gemini_enabled"))
         self.gemini_enabled_check.toggled.connect(self._on_gemini_toggled)
-        gemini_layout.addWidget(self.gemini_enabled_check)
+        gemini_form.addRow(self.gemini_enabled_check)
 
-        # API Key row
-        key_row = QHBoxLayout()
-        key_row.addWidget(QLabel(tr("settings_gemini_api_key") + ":"))
+        # API Key row with buttons
+        api_row = QWidget()
+        api_row_layout = QHBoxLayout(api_row)
+        api_row_layout.setContentsMargins(0, 0, 0, 0)
+        api_row_layout.setSpacing(8)
+
         self.gemini_api_key_edit = QLineEdit()
         self.gemini_api_key_edit.setPlaceholderText("AIza...")
         self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
-        self.gemini_api_key_edit.setMinimumWidth(250)
-        key_row.addWidget(self.gemini_api_key_edit)
-        key_row.addStretch()
-        gemini_layout.addLayout(key_row)
+        self.gemini_api_key_edit.setMinimumWidth(200)
+        api_row_layout.addWidget(self.gemini_api_key_edit, 1)
 
-        # Buttons row
-        btn_row = QHBoxLayout()
-        self.show_key_btn = QPushButton("👁 " + tr("settings_show_key"))
+        self.show_key_btn = QPushButton(tr("settings_show_key"))
         self.show_key_btn.setCheckable(True)
         self.show_key_btn.toggled.connect(self._toggle_api_key_visibility)
-        btn_row.addWidget(self.show_key_btn)
+        api_row_layout.addWidget(self.show_key_btn)
 
-        self.test_key_btn = QPushButton("🔑 " + tr("settings_test_key"))
+        self.test_key_btn = QPushButton(tr("settings_test_key"))
         self.test_key_btn.clicked.connect(self._test_gemini_key)
-        btn_row.addWidget(self.test_key_btn)
-        btn_row.addStretch()
-        gemini_layout.addLayout(btn_row)
+        api_row_layout.addWidget(self.test_key_btn)
 
-        # Model row
-        model_row = QHBoxLayout()
-        model_row.addWidget(QLabel(tr("settings_gemini_model") + ":"))
+        gemini_form.addRow(tr("settings_gemini_api_key") + ":", api_row)
+
+        # Model selection
         self.gemini_model_combo = QComboBox()
-        self.gemini_model_combo.setMinimumWidth(300)
         for model_id, info in GEMINI_MODELS.items():
             self.gemini_model_combo.addItem(f"{model_id} ({info['speed']})", model_id)
-        model_row.addWidget(self.gemini_model_combo)
-        model_row.addStretch()
-        gemini_layout.addLayout(model_row)
+        gemini_form.addRow(tr("settings_gemini_model") + ":", self.gemini_model_combo)
 
         # Status label
         self.gemini_status_label = QLabel()
-        gemini_layout.addWidget(self.gemini_status_label)
+        self.gemini_status_label.setStyleSheet("color: #ff9800; font-size: 12px;")
+        gemini_form.addRow(self.gemini_status_label)
 
         layout.addWidget(gemini_group)
 
         # Model selection
         model_group = QGroupBox(tr("settings_whisper_model"))
-        model_layout = QVBoxLayout(model_group)
+        model_form = QFormLayout(model_group)
+        model_form.setSpacing(12)
+        model_form.setContentsMargins(12, 16, 12, 12)
 
-        # Model combo
-        model_form = QFormLayout()
+        # Model combo with download button on same row
+        model_row = QWidget()
+        model_row_layout = QHBoxLayout(model_row)
+        model_row_layout.setContentsMargins(0, 0, 0, 0)
+        model_row_layout.setSpacing(8)
+
         self.model_combo = QComboBox()
 
+        # Accuracy translation mapping
+        accuracy_map = {
+            "Low": "accuracy_low",
+            "Medium": "accuracy_medium",
+            "Good": "accuracy_good",
+            "Best": "accuracy_best",
+        }
+
         for model_id, info in WHISPER_MODELS.items():
-            label = f"{model_id.capitalize()} ({info['size']}) - {info['accuracy']}"
+            acc_key = accuracy_map.get(info['accuracy'], "accuracy_medium")
+            label = f"{model_id.capitalize()} ({info['size']}) - {tr(acc_key)}"
             self.model_combo.addItem(label, model_id)
 
-        model_form.addRow("Model:", self.model_combo)
-        model_layout.addLayout(model_form)
+        model_row_layout.addWidget(self.model_combo, 1)
+
+        self.download_btn = QPushButton(tr("settings_whisper_download"))
+        self.download_btn.clicked.connect(self._download_model)
+        model_row_layout.addWidget(self.download_btn)
+
+        model_form.addRow(tr("settings_gemini_model") + ":", model_row)
+
+        # Download progress (hidden by default)
+        self.download_progress = QProgressBar()
+        self.download_progress.setVisible(False)
+        model_form.addRow(self.download_progress)
 
         # Model info
         self.model_info_label = QLabel()
         self.model_info_label.setWordWrap(True)
-        self.model_info_label.setStyleSheet("color: #888; font-size: 11px;")
-        model_layout.addWidget(self.model_info_label)
+        self.model_info_label.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        model_form.addRow(self.model_info_label)
 
         self.model_combo.currentIndexChanged.connect(self._update_model_info)
 
-        # Download button and progress
-        download_layout = QHBoxLayout()
-        self.download_btn = QPushButton(tr("settings_whisper_download"))
-        self.download_btn.clicked.connect(self._download_model)
-        download_layout.addWidget(self.download_btn)
-
-        self.download_progress = QProgressBar()
-        self.download_progress.setVisible(False)
-        download_layout.addWidget(self.download_progress)
-
-        model_layout.addLayout(download_layout)
-
         # Model status
         self.model_status_label = QLabel()
-        model_layout.addWidget(self.model_status_label)
+        model_form.addRow(self.model_status_label)
 
         layout.addWidget(model_group)
 
@@ -446,18 +477,21 @@ class SettingsDialog(QDialog):
         model_id = self.model_combo.currentData()
         if model_id and model_id in WHISPER_MODELS:
             info = WHISPER_MODELS[model_id]
-            if get_language() == "tr":
-                text = (
-                    f"Boyut: {info['size']}\n"
-                    f"Hız: {info['speed']} (gerçek zamana göre)\n"
-                    f"Doğruluk: {info['accuracy']}"
-                )
-            else:
-                text = (
-                    f"Size: {info['size']}\n"
-                    f"Speed: {info['speed']} (relative to realtime)\n"
-                    f"Accuracy: {info['accuracy']}"
-                )
+            # Accuracy translation
+            accuracy_map = {
+                "Low": "accuracy_low",
+                "Medium": "accuracy_medium",
+                "Good": "accuracy_good",
+                "Best": "accuracy_best",
+            }
+            acc_key = accuracy_map.get(info['accuracy'], "accuracy_medium")
+            acc_text = tr(acc_key)
+
+            text = (
+                f"{tr('model_size')}: {info['size']}\n"
+                f"{tr('model_speed')}: {info['speed']} ({tr('model_speed_desc')})\n"
+                f"{tr('model_accuracy')}: {acc_text}"
+            )
             self.model_info_label.setText(text)
 
     def _check_model_status(self):
@@ -480,17 +514,17 @@ class SettingsDialog(QDialog):
                         break
 
                 if model_found:
-                    self.model_status_label.setText("✅ Model ready")
+                    self.model_status_label.setText("✅ " + tr("settings_model_ready"))
                     self.model_status_label.setStyleSheet("color: #4caf50;")
                 else:
-                    self.model_status_label.setText("⚠️ Model not downloaded")
+                    self.model_status_label.setText("⚠️ " + tr("settings_model_not_downloaded"))
                     self.model_status_label.setStyleSheet("color: #ff9800;")
             except Exception:
-                self.model_status_label.setText("❓ Status unknown")
+                self.model_status_label.setText("❓ " + tr("settings_status_unknown"))
                 self.model_status_label.setStyleSheet("color: #888;")
 
         except ImportError:
-            self.model_status_label.setText("❌ faster-whisper not installed")
+            self.model_status_label.setText("❌ " + tr("settings_whisper_not_installed"))
             self.model_status_label.setStyleSheet("color: #f44336;")
             self.download_btn.setEnabled(False)
 
@@ -499,6 +533,24 @@ class SettingsDialog(QDialog):
         model_id = self.model_combo.currentData()
         if not model_id:
             return
+
+        # Check if model is already downloaded
+        try:
+            from huggingface_hub import scan_cache_dir
+            cache_info = scan_cache_dir()
+            for repo in cache_info.repos:
+                if model_id in repo.repo_id.lower():
+                    # Model already downloaded
+                    QMessageBox.information(
+                        self,
+                        tr("dialog_info"),
+                        tr("settings_model_already_downloaded")
+                    )
+                    self.model_status_label.setText("✅ " + tr("settings_model_ready"))
+                    self.model_status_label.setStyleSheet("color: #4caf50;")
+                    return
+        except Exception:
+            pass  # If check fails, proceed with download
 
         self.download_btn.setEnabled(False)
         self.download_progress.setVisible(True)
@@ -516,15 +568,15 @@ class SettingsDialog(QDialog):
         self.download_progress.setVisible(False)
 
         if success:
-            self.model_status_label.setText("✅ Model ready")
+            self.model_status_label.setText("✅ " + tr("settings_model_ready"))
             self.model_status_label.setStyleSheet("color: #4caf50;")
             QMessageBox.information(
                 self,
                 tr("dialog_info"),
-                "Model downloaded successfully!"
+                tr("settings_download_success")
             )
         else:
-            self.model_status_label.setText(f"❌ Download failed")
+            self.model_status_label.setText("❌ " + tr("settings_download_failed"))
             self.model_status_label.setStyleSheet("color: #f44336;")
             QMessageBox.critical(
                 self,
@@ -552,10 +604,10 @@ class SettingsDialog(QDialog):
         """API key görünürlüğünü değiştir."""
         if show:
             self.gemini_api_key_edit.setEchoMode(QLineEdit.Normal)
-            self.show_key_btn.setText("🙈 " + tr("settings_hide_key"))
+            self.show_key_btn.setText(tr("settings_hide_key"))
         else:
             self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
-            self.show_key_btn.setText("👁 " + tr("settings_show_key"))
+            self.show_key_btn.setText(tr("settings_show_key"))
 
     def _update_gemini_status(self):
         """Gemini durum bilgisini güncelle."""

@@ -546,22 +546,56 @@ Rules:
 
     def _parse_response(self, response_text: str) -> list[TranscriptSegment]:
         """Parse Gemini response to TranscriptSegment list."""
-        # Try to extract JSON from response
-        # Sometimes the response has markdown code blocks
-        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response_text)
-        if json_match:
-            json_text = json_match.group(1)
-        else:
-            # Try to find raw JSON
-            json_text = response_text.strip()
+        logger.debug(f"Parsing Gemini response, length: {len(response_text)}")
+
+        json_text = response_text.strip()
+
+        # Method 1: Extract content from markdown code blocks
+        if '```' in json_text:
+            lines = json_text.split('\n')
+            cleaned_lines = []
+            in_code_block = False
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith('```'):
+                    in_code_block = not in_code_block
+                    continue  # Skip the ``` lines themselves
+                if in_code_block:
+                    cleaned_lines.append(line)  # Keep lines inside code block
+            if cleaned_lines:
+                json_text = '\n'.join(cleaned_lines).strip()
+            logger.debug(f"After code block removal: {json_text[:200]}...")
+
+        # Method 2: Find JSON object boundaries
+        brace_start = json_text.find('{')
+        if brace_start != -1:
+            # Find matching closing brace
+            depth = 0
+            brace_end = -1
+            for i, char in enumerate(json_text[brace_start:], brace_start):
+                if char == '{':
+                    depth += 1
+                elif char == '}':
+                    depth -= 1
+                    if depth == 0:
+                        brace_end = i
+                        break
+
+            if brace_end > brace_start:
+                json_text = json_text[brace_start:brace_end + 1]
+
+        logger.debug(f"Cleaned JSON text starts with: {json_text[:100]}...")
 
         try:
             data = json.loads(json_text)
-        except json.JSONDecodeError:
-            # If JSON parsing fails, create a single segment with the text
-            logger.warning("Failed to parse Gemini response as JSON, using raw text")
+            logger.debug(f"Successfully parsed JSON with {len(data.get('segments', []))} segments")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response as JSON: {e}")
+            logger.error(f"JSON text was: {json_text[:500]}...")
+            # Return single segment with cleaned text (without JSON/code blocks)
+            clean_text = response_text.replace('```json', '').replace('```', '').strip()
             return [TranscriptSegment(
-                text=response_text.strip(),
+                text=clean_text,
                 start=0.0,
                 end=0.0,
                 language="unknown",
@@ -571,14 +605,17 @@ Rules:
         segments = []
 
         for seg_data in data.get("segments", []):
-            segment = TranscriptSegment(
-                text=seg_data.get("text", "").strip(),
-                start=float(seg_data.get("start", 0)),
-                end=float(seg_data.get("end", 0)),
-                language=language,
-            )
-            segments.append(segment)
+            text = seg_data.get("text", "").strip()
+            if text:  # Only add segments with text
+                segment = TranscriptSegment(
+                    text=text,
+                    start=float(seg_data.get("start", 0)),
+                    end=float(seg_data.get("end", 0)),
+                    language=language,
+                )
+                segments.append(segment)
 
+        logger.info(f"Parsed {len(segments)} transcript segments")
         return segments
 
 

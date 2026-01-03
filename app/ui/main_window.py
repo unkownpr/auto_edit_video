@@ -121,6 +121,18 @@ class MainWindow(QMainWindow):
             self.autosave_timer.timeout.connect(self._autosave)
             self.autosave_timer.start(self.settings.autosave_interval_sec * 1000)
 
+        # Show tour on first launch (delayed to ensure window is visible)
+        if not self.settings.tour_completed:
+            QTimer.singleShot(500, self._show_tour)
+
+    def _show_tour(self):
+        """İlk açılışta turu göster."""
+        from app.ui.tour_dialog import TourDialog
+        tour = TourDialog(self)
+        if tour.exec() == TourDialog.Accepted:
+            self.settings.tour_completed = True
+            self.settings.save()
+
     def _start_worker(self, worker: Worker):
         """Start a worker and keep it alive until finished.
 
@@ -490,9 +502,19 @@ class MainWindow(QMainWindow):
         self.transcript_list.setObjectName("transcriptList")
         transcript_layout.addWidget(self.transcript_list)
 
+        # Transcript buttons row
+        transcript_btn_layout = QHBoxLayout()
+
         transcribe_btn = QPushButton(tr("btn_transcribe"))
         transcribe_btn.clicked.connect(self._run_transcription)
-        transcript_layout.addWidget(transcribe_btn)
+        transcript_btn_layout.addWidget(transcribe_btn)
+
+        self.export_transcript_btn = QPushButton(tr("btn_export_transcript"))
+        self.export_transcript_btn.clicked.connect(self._export_transcript)
+        self.export_transcript_btn.setEnabled(False)
+        transcript_btn_layout.addWidget(self.export_transcript_btn)
+
+        transcript_layout.addLayout(transcript_btn_layout)
 
         tabs.addTab(transcript_widget, tr("panel_transcript"))
         layout.addWidget(tabs, 1)
@@ -1530,6 +1552,7 @@ class MainWindow(QMainWindow):
             self.transcript_list.clear()
             for seg in segments:
                 self.transcript_list.addItem(f"[{self._format_time(seg.start)}] {seg.text}")
+            self.export_transcript_btn.setEnabled(len(segments) > 0)
             self.statusbar.showMessage(tr("gemini_transcribed", len(segments)))
 
         def on_error(error):
@@ -1643,6 +1666,7 @@ class MainWindow(QMainWindow):
             self.transcript_list.clear()
             for seg in segments:
                 self.transcript_list.addItem(f"[{self._format_time(seg.start)}] {seg.text}")
+            self.export_transcript_btn.setEnabled(len(segments) > 0)
             self.statusbar.showMessage(f"Transcribed {len(segments)} segments")
 
         def on_error(error):
@@ -1654,6 +1678,39 @@ class MainWindow(QMainWindow):
         worker.signals.result.connect(on_complete, Qt.QueuedConnection)
         worker.signals.error.connect(on_error, Qt.QueuedConnection)
         self._start_worker(worker)
+
+    def _export_transcript(self):
+        """Transcript'i .txt dosyasına aktar."""
+        if not self.project or not self.project.transcript_segments:
+            QMessageBox.warning(self, tr("dialog_warning"), tr("no_transcript"))
+            return
+
+        # Dosya kaydetme dialogu
+        default_name = "transcript.txt"
+        if self.project.media_info:
+            default_name = self.project.media_info.file_path.stem + "_transcript.txt"
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            tr("export_transcript_title"),
+            default_name,
+            "Text Files (*.txt);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                for seg in self.project.transcript_segments:
+                    time_str = self._format_time(seg.start)
+                    f.write(f"[{time_str}] {seg.text}\n")
+
+            self.statusbar.showMessage(tr("transcript_exported", file_path))
+            QMessageBox.information(self, tr("dialog_info"), tr("transcript_exported", file_path))
+
+        except Exception as e:
+            QMessageBox.critical(self, tr("dialog_error"), str(e))
 
     def _render_video_without_silences(self):
         """Sessiz alanları silip yeni video oluştur."""

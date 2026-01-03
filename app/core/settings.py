@@ -163,6 +163,9 @@ class Settings:
     custom_presets: list[Preset] = field(default_factory=list)
     last_used_preset: str = "Podcast"
 
+    # First launch / Tour
+    tour_completed: bool = False
+
     # Keyboard shortcuts (key -> action mapping)
     shortcuts: dict = field(default_factory=lambda: {
         "play_pause": "Space",
@@ -247,6 +250,7 @@ class Settings:
             "custom_presets": [p.to_dict() for p in self.custom_presets],
             "last_used_preset": self.last_used_preset,
             "shortcuts": self.shortcuts,
+            "tour_completed": self.tour_completed,
         }
         self.get_settings_path().write_text(json.dumps(data, indent=2))
 
@@ -286,6 +290,7 @@ class Settings:
                 ],
                 last_used_preset=data.get("last_used_preset", "Podcast"),
                 shortcuts=data.get("shortcuts", {}),
+                tour_completed=data.get("tour_completed", False),
             )
             return settings
         except (json.JSONDecodeError, KeyError):
