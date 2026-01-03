@@ -156,40 +156,41 @@ class FCPXMLBuilder:
         fps = media.fps or 30.0
         frame_duration = time_to_rational(1.0 / fps, fps)
 
-        format_elem = etree.SubElement(
+        # Format element - sadece video format bilgileri
+        # audioSampleRate ve audioChannels DTD'de yok
+        etree.SubElement(
             self._resources, "format",
             id=self._format_id,
-            name=f"{media.width}x{media.height} {fps:.2f}fps",
+            name=f"FFVideoFormat{media.height or 1080}p{int(fps)}",
             frameDuration=frame_duration,
             width=str(media.width) if media.width else "1920",
             height=str(media.height) if media.height else "1080",
         )
 
-        # Audio properties
-        format_elem.set("audioSampleRate", str(media.sample_rate))
-        format_elem.set("audioChannels", str(media.channels))
-
     def _build_asset(self, media: MediaInfo) -> None:
         """Media asset resource."""
         self._asset_id = "r2"
 
+        fps = media.fps or 30.0
+
+        # Asset element - src attribute yerine media-rep child kullanılmalı
         asset = etree.SubElement(
             self._resources, "asset",
             id=self._asset_id,
-            name=media.file_path.stem,
-            src=path_to_url(media.file_path),
+            name=sanitize_name(media.file_path.stem),
             start="0s",
-            duration=duration_to_rational(media.duration, media.fps or 30.0),
+            duration=duration_to_rational(media.duration, fps),
             hasVideo="1" if media.has_video else "0",
             hasAudio="1" if media.has_audio else "0",
             format=self._format_id,
         )
 
-        # Audio/video codec info
-        if media.video_codec:
-            asset.set("videoCodec", media.video_codec)
-        if media.audio_codec:
-            asset.set("audioCodec", media.audio_codec)
+        # media-rep child element - source file location
+        etree.SubElement(
+            asset, "media-rep",
+            kind="original-media",
+            src=path_to_url(media.file_path),
+        )
 
     def _build_sequence(
         self,
@@ -244,12 +245,13 @@ class FCPXMLBuilder:
         if self._root is None:
             self.build()
 
-        # XML string oluştur
+        # XML string oluştur - DOCTYPE dahil
         xml_string = etree.tostring(
             self._root,
             pretty_print=True,
             xml_declaration=True,
             encoding="UTF-8",
+            doctype="<!DOCTYPE fcpxml>",
         )
 
         # Dosyaya yaz
@@ -269,7 +271,7 @@ class FCPXMLBuilder:
             pretty_print=True,
             encoding="unicode",
         )
-        return '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_content
+        return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n' + xml_content
 
 
 def export_fcpxml(
@@ -305,12 +307,12 @@ EXAMPLE_FCPXML = '''<?xml version="1.0" encoding="UTF-8"?>
     <resources>
         <format id="r1" name="FFVideoFormat1080p30"
                 frameDuration="1001/30000s"
-                width="1920" height="1080"
-                audioSampleRate="48000" audioChannels="2"/>
+                width="1920" height="1080"/>
         <asset id="r2" name="my_video"
-               src="file:///path/to/video.mp4"
                start="0s" duration="3603603/30000s"
-               hasVideo="1" hasAudio="1" format="r1"/>
+               hasVideo="1" hasAudio="1" format="r1">
+            <media-rep kind="original-media" src="file:///path/to/video.mp4"/>
+        </asset>
     </resources>
     <library>
         <event name="AutoCut Export">
