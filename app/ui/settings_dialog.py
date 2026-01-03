@@ -201,12 +201,14 @@ class SettingsDialog(QDialog):
 
         # Show/hide API key button
         key_layout = QHBoxLayout()
-        self.show_key_btn = QPushButton(tr("settings_show_key"))
+        self.show_key_btn = QPushButton("👁 " + tr("settings_show_key"))
         self.show_key_btn.setCheckable(True)
+        self.show_key_btn.setMinimumWidth(80)
         self.show_key_btn.toggled.connect(self._toggle_api_key_visibility)
         key_layout.addWidget(self.show_key_btn)
 
-        self.test_key_btn = QPushButton(tr("settings_test_key"))
+        self.test_key_btn = QPushButton("🔑 " + tr("settings_test_key"))
+        self.test_key_btn.setMinimumWidth(100)
         self.test_key_btn.clicked.connect(self._test_gemini_key)
         key_layout.addWidget(self.test_key_btn)
         key_layout.addStretch()
@@ -539,10 +541,10 @@ class SettingsDialog(QDialog):
         """API key görünürlüğünü değiştir."""
         if show:
             self.gemini_api_key_edit.setEchoMode(QLineEdit.Normal)
-            self.show_key_btn.setText(tr("settings_hide_key"))
+            self.show_key_btn.setText("🙈 " + tr("settings_hide_key"))
         else:
             self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
-            self.show_key_btn.setText(tr("settings_show_key"))
+            self.show_key_btn.setText("👁 " + tr("settings_show_key"))
 
     def _update_gemini_status(self):
         """Gemini durum bilgisini güncelle."""
