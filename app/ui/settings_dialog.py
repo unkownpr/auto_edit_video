@@ -201,14 +201,33 @@ class SettingsDialog(QDialog):
 
         # Show/hide API key button
         key_layout = QHBoxLayout()
+
+        btn_style = """
+            QPushButton {
+                background-color: #3a3a3c;
+                color: #ffffff;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4c;
+            }
+            QPushButton:pressed {
+                background-color: #2a2a2c;
+            }
+        """
+
         self.show_key_btn = QPushButton("👁 " + tr("settings_show_key"))
         self.show_key_btn.setCheckable(True)
-        self.show_key_btn.setMinimumWidth(80)
+        self.show_key_btn.setMinimumWidth(90)
+        self.show_key_btn.setStyleSheet(btn_style)
         self.show_key_btn.toggled.connect(self._toggle_api_key_visibility)
         key_layout.addWidget(self.show_key_btn)
 
         self.test_key_btn = QPushButton("🔑 " + tr("settings_test_key"))
         self.test_key_btn.setMinimumWidth(100)
+        self.test_key_btn.setStyleSheet(btn_style)
         self.test_key_btn.clicked.connect(self._test_gemini_key)
         key_layout.addWidget(self.test_key_btn)
         key_layout.addStretch()
