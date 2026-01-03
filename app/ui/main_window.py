@@ -102,9 +102,8 @@ class MainWindow(QMainWindow):
             set_language(detected)
             self.settings.language = detected
 
-        # FFmpeg kontrolü
-        if not self._check_ffmpeg():
-            return
+        # FFmpeg kontrolü (sadece uyarı göster, UI yüklenmeye devam etsin)
+        self._ffmpeg_available = self._check_ffmpeg()
 
         self._setup_ui()
         self._setup_menu()
@@ -178,13 +177,18 @@ class MainWindow(QMainWindow):
             FFmpegWrapper()
             return True
         except FFmpegNotFoundError:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Critical)
-            msg.setWindowTitle(tr("dialog_error"))
-            msg.setText(tr("error_ffmpeg_not_found"))
-            msg.setInformativeText(tr("error_ffmpeg_install"))
-            msg.exec()
+            # UI yüklendikten sonra uyarı göster
+            QTimer.singleShot(100, self._show_ffmpeg_warning)
             return False
+
+    def _show_ffmpeg_warning(self):
+        """FFmpeg uyarısını göster."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle(tr("dialog_warning"))
+        msg.setText(tr("error_ffmpeg_not_found"))
+        msg.setInformativeText(tr("error_ffmpeg_install"))
+        msg.exec()
 
     @Slot(int, str)
     def _update_progress(self, value: int, message: str):
