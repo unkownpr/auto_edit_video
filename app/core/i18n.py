@@ -39,6 +39,15 @@ TRANSLATIONS = {
         "menu_zoom_out": "Zoom &Out",
         "menu_zoom_fit": "Zoom to &Fit",
         "menu_about": "&About",
+        "about_title": "About AutoCut",
+        "about_description": "Automatic silence detection and video editing tool.",
+        "about_features": "Features",
+        "about_feature_1": "Automatic silence region detection",
+        "about_feature_2": "Final Cut Pro style timeline",
+        "about_feature_3": "FCPXML, Premiere XML, EDL export",
+        "about_feature_4": "Render video with silences removed",
+        "about_feature_5": "AI-powered transcription (Whisper & Gemini)",
+        "about_developed_by": "Developed by",
 
         # Toolbar
         "toolbar_open": "Open",
@@ -297,6 +306,15 @@ TRANSLATIONS = {
         "menu_zoom_out": "Uzaklaştır",
         "menu_zoom_fit": "Sığdır",
         "menu_about": "&Hakkında",
+        "about_title": "AutoCut Hakkında",
+        "about_description": "Otomatik sessizlik algılama ve video düzenleme aracı.",
+        "about_features": "Özellikler",
+        "about_feature_1": "Sessiz bölgeleri otomatik tespit",
+        "about_feature_2": "Final Cut Pro tarzı timeline",
+        "about_feature_3": "FCPXML, Premiere XML, EDL dışa aktarma",
+        "about_feature_4": "Sessiz alanları kesip yeni video oluşturma",
+        "about_feature_5": "AI destekli transkript (Whisper & Gemini)",
+        "about_developed_by": "Geliştiren",
 
         # Toolbar
         "toolbar_open": "Aç",

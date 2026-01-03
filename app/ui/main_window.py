@@ -1924,17 +1924,21 @@ class MainWindow(QMainWindow):
         """About dialog."""
         from app import __version__
         about_text = f"""
-<h2>AutoCut</h2>
-<p>Version {__version__}</p>
-<p>Otomatik sessizlik algılama ve video düzenleme aracı.</p>
-<p><b>Özellikler:</b></p>
-<ul>
-<li>Sessiz bölgeleri otomatik tespit</li>
-<li>Final Cut Pro tarzı timeline</li>
-<li>FCPXML, Premiere XML, EDL export</li>
-<li>Sessiz alanları kesip yeni video oluşturma</li>
+<h2 style="margin-bottom: 5px;">AutoCut</h2>
+<p style="color: #888; margin-top: 0;">Version {__version__}</p>
+<p>{tr("about_description")}</p>
+<p><b>{tr("about_features")}:</b></p>
+<ul style="margin-left: -10px;">
+<li>{tr("about_feature_1")}</li>
+<li>{tr("about_feature_2")}</li>
+<li>{tr("about_feature_3")}</li>
+<li>{tr("about_feature_4")}</li>
+<li>{tr("about_feature_5")}</li>
 </ul>
-<hr>
-<p style="color: #888;">developed by <b>ssilistre.dev</b></p>
+<hr style="border: none; border-top: 1px solid #444; margin: 15px 0;">
+<p style="text-align: center; color: #666; font-size: 12px;">
+{tr("about_developed_by")}<br>
+<a href="https://ssilistre.dev" style="color: #4CAF50; text-decoration: none; font-weight: bold; font-size: 14px;">ssilistre.dev</a>
+</p>
 """
-        QMessageBox.about(self, "AutoCut Hakkında", about_text)
+        QMessageBox.about(self, tr("about_title"), about_text)
