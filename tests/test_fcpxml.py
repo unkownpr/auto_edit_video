@@ -118,7 +118,10 @@ class TestFCPXMLBuilder:
             # Asset
             asset = resources.find("asset")
             assert asset is not None
-            assert "video.mp4" in asset.get("src")
+            # src is now in media-rep child element
+            media_rep = asset.find("media-rep")
+            assert media_rep is not None
+            assert "video.mp4" in media_rep.get("src")
 
             # Library -> Event -> Project -> Sequence -> Spine
             library = root.find("library")

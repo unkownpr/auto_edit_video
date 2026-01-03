@@ -189,10 +189,10 @@ class TestAnalysisConfig:
         """Varsayılan konfigürasyon."""
         config = AnalysisConfig()
 
-        assert config.silence_threshold_db == -35.0
-        assert config.silence_min_duration_ms == 250
-        assert config.pre_pad_ms == 80
-        assert config.post_pad_ms == 120
+        assert config.silence_threshold_db == -30.0
+        assert config.silence_min_duration_ms == 500
+        assert config.pre_pad_ms == 100
+        assert config.post_pad_ms == 150
 
     def test_config_serialization(self):
         """Config serialization."""
