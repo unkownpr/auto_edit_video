@@ -1516,7 +1516,7 @@ class MainWindow(QMainWindow):
         def do_work(progress_callback):
             from app.transcript.transcriber import transcribe_with_gemini
 
-            progress_callback(5, "Gemini API'ye bağlanılıyor...")
+            progress_callback(5, tr("gemini_connecting"))
             return transcribe_with_gemini(
                 media.audio_path,
                 api_key=self.settings.gemini_api_key,
@@ -1530,11 +1530,11 @@ class MainWindow(QMainWindow):
             self.transcript_list.clear()
             for seg in segments:
                 self.transcript_list.addItem(f"[{self._format_time(seg.start)}] {seg.text}")
-            self.statusbar.showMessage(f"Gemini: {len(segments)} segment transkript edildi")
+            self.statusbar.showMessage(tr("gemini_transcribed", len(segments)))
 
         def on_error(error):
             self._close_progress_dialog()
-            QMessageBox.critical(self, tr("dialog_error"), f"Gemini Error: {error}")
+            QMessageBox.critical(self, tr("dialog_error"), tr("gemini_error", str(error)))
 
         worker = Worker(do_work)
         worker.signals.progress.connect(self._update_progress, Qt.QueuedConnection)
@@ -1630,7 +1630,7 @@ class MainWindow(QMainWindow):
                 vad_filter=True,  # Skip silent parts
             )
 
-            progress_callback(5, f"Model yükleniyor: {model_size.value}...")
+            progress_callback(5, tr("model_loading", model_size.value))
             return transcribe_audio(
                 media.audio_path,
                 config,

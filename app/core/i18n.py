@@ -158,6 +158,10 @@ TRANSLATIONS = {
         "settings_gemini_testing": "Testing API key...",
         "settings_gemini_key_valid": "API key is valid!",
         "settings_gemini_key_forbidden": "API key forbidden",
+        "gemini_connecting": "Connecting to Gemini API...",
+        "gemini_transcribed": "Gemini: {0} segments transcribed",
+        "gemini_error": "Gemini Error: {0}",
+        "model_loading": "Loading model: {0}...",
         "settings_default_export": "Default export format",
         "settings_restart_required": "Restart required for changes to take effect",
 
@@ -370,6 +374,10 @@ TRANSLATIONS = {
         "settings_gemini_testing": "API anahtarı test ediliyor...",
         "settings_gemini_key_valid": "API anahtarı geçerli!",
         "settings_gemini_key_forbidden": "API anahtarı yetkisiz",
+        "gemini_connecting": "Gemini API'ye bağlanılıyor...",
+        "gemini_transcribed": "Gemini: {0} segment transkript edildi",
+        "gemini_error": "Gemini Hatası: {0}",
+        "model_loading": "Model yükleniyor: {0}...",
         "settings_default_export": "Varsayılan dışa aktarma formatı",
         "settings_restart_required": "Değişikliklerin geçerli olması için yeniden başlatma gerekli",
 
