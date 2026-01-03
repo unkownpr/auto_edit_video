@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QMessageBox,
+    QLineEdit,
 )
 
 from app.core.settings import Settings, Theme
@@ -41,6 +42,13 @@ WHISPER_MODELS = {
     "small": {"size": "244 MB", "speed": "~6x", "accuracy": "Medium"},
     "medium": {"size": "769 MB", "speed": "~2x", "accuracy": "Good"},
     "large-v3": {"size": "1550 MB", "speed": "~1x", "accuracy": "Best"},
+}
+
+# Gemini model bilgileri
+GEMINI_MODELS = {
+    "gemini-2.0-flash-exp": {"desc": "Fast, experimental", "speed": "Very Fast"},
+    "gemini-1.5-flash": {"desc": "Fast, production ready", "speed": "Fast"},
+    "gemini-1.5-pro": {"desc": "Most capable", "speed": "Slower"},
 }
 
 
@@ -177,6 +185,43 @@ class SettingsDialog(QDialog):
         """Transkripsiyon ayarları sekmesi."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+
+        # Gemini API Settings
+        gemini_group = QGroupBox("Gemini API")
+        gemini_layout = QFormLayout(gemini_group)
+
+        self.gemini_enabled_check = QCheckBox(tr("settings_gemini_enabled"))
+        self.gemini_enabled_check.toggled.connect(self._on_gemini_toggled)
+        gemini_layout.addRow(self.gemini_enabled_check)
+
+        self.gemini_api_key_edit = QLineEdit()
+        self.gemini_api_key_edit.setPlaceholderText("AIza...")
+        self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
+        gemini_layout.addRow(tr("settings_gemini_api_key") + ":", self.gemini_api_key_edit)
+
+        # Show/hide API key button
+        key_layout = QHBoxLayout()
+        self.show_key_btn = QPushButton(tr("settings_show_key"))
+        self.show_key_btn.setCheckable(True)
+        self.show_key_btn.toggled.connect(self._toggle_api_key_visibility)
+        key_layout.addWidget(self.show_key_btn)
+
+        self.test_key_btn = QPushButton(tr("settings_test_key"))
+        self.test_key_btn.clicked.connect(self._test_gemini_key)
+        key_layout.addWidget(self.test_key_btn)
+        key_layout.addStretch()
+
+        gemini_layout.addRow(key_layout)
+
+        self.gemini_model_combo = QComboBox()
+        for model_id, info in GEMINI_MODELS.items():
+            self.gemini_model_combo.addItem(f"{model_id} ({info['speed']})", model_id)
+        gemini_layout.addRow(tr("settings_gemini_model") + ":", self.gemini_model_combo)
+
+        self.gemini_status_label = QLabel()
+        gemini_layout.addRow(self.gemini_status_label)
+
+        layout.addWidget(gemini_group)
 
         # Model selection
         model_group = QGroupBox(tr("settings_whisper_model"))
@@ -327,6 +372,17 @@ class SettingsDialog(QDialog):
 
         self._update_model_info()
 
+        # Gemini
+        self.gemini_enabled_check.setChecked(self.settings.gemini_enabled)
+        self.gemini_api_key_edit.setText(self.settings.gemini_api_key)
+
+        gemini_model_index = self.gemini_model_combo.findData(self.settings.gemini_model)
+        if gemini_model_index >= 0:
+            self.gemini_model_combo.setCurrentIndex(gemini_model_index)
+
+        self._on_gemini_toggled(self.settings.gemini_enabled)
+        self._update_gemini_status()
+
     def _apply_settings(self):
         """Ayarları uygula."""
         # Language
@@ -357,6 +413,11 @@ class SettingsDialog(QDialog):
 
         # Export
         self.settings.default_export_format = self.default_export_combo.currentData()
+
+        # Gemini
+        self.settings.gemini_enabled = self.gemini_enabled_check.isChecked()
+        self.settings.gemini_api_key = self.gemini_api_key_edit.text().strip()
+        self.settings.gemini_model = self.gemini_model_combo.currentData()
 
         # Save
         self.settings.save()
@@ -459,3 +520,101 @@ class SettingsDialog(QDialog):
             )
 
         self._download_thread = None
+
+    def _on_gemini_toggled(self, enabled: bool):
+        """Gemini toggle edildiğinde UI'ı güncelle."""
+        self.gemini_api_key_edit.setEnabled(enabled)
+        self.gemini_model_combo.setEnabled(enabled)
+        self.show_key_btn.setEnabled(enabled)
+        self.test_key_btn.setEnabled(enabled)
+
+        # Whisper'ı devre dışı bırak/etkinleştir
+        self.model_combo.setEnabled(not enabled)
+        self.download_btn.setEnabled(not enabled)
+        self.device_combo.setEnabled(not enabled)
+
+        self._update_gemini_status()
+
+    def _toggle_api_key_visibility(self, show: bool):
+        """API key görünürlüğünü değiştir."""
+        if show:
+            self.gemini_api_key_edit.setEchoMode(QLineEdit.Normal)
+            self.show_key_btn.setText(tr("settings_hide_key"))
+        else:
+            self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
+            self.show_key_btn.setText(tr("settings_show_key"))
+
+    def _update_gemini_status(self):
+        """Gemini durum bilgisini güncelle."""
+        if not self.gemini_enabled_check.isChecked():
+            self.gemini_status_label.setText(tr("settings_gemini_disabled"))
+            self.gemini_status_label.setStyleSheet("color: #888;")
+            return
+
+        api_key = self.gemini_api_key_edit.text().strip()
+        if not api_key:
+            self.gemini_status_label.setText(tr("settings_gemini_no_key"))
+            self.gemini_status_label.setStyleSheet("color: #ff9800;")
+        elif api_key.startswith("AIza"):
+            self.gemini_status_label.setText(tr("settings_gemini_key_set"))
+            self.gemini_status_label.setStyleSheet("color: #4caf50;")
+        else:
+            self.gemini_status_label.setText(tr("settings_gemini_invalid_key"))
+            self.gemini_status_label.setStyleSheet("color: #f44336;")
+
+    def _test_gemini_key(self):
+        """Gemini API key'ini test et."""
+        api_key = self.gemini_api_key_edit.text().strip()
+        if not api_key:
+            QMessageBox.warning(self, tr("dialog_warning"), tr("settings_gemini_no_key"))
+            return
+
+        self.test_key_btn.setEnabled(False)
+        self.gemini_status_label.setText(tr("settings_gemini_testing"))
+        self.gemini_status_label.setStyleSheet("color: #2196f3;")
+
+        # Test API key with a simple request
+        try:
+            import urllib.request
+            import json
+
+            model = self.gemini_model_combo.currentData()
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+            data = json.dumps({
+                "contents": [{"parts": [{"text": "Say 'API key works!' in 3 words."}]}]
+            }).encode('utf-8')
+
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+
+            with urllib.request.urlopen(req, timeout=10) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                if "candidates" in result:
+                    self.gemini_status_label.setText("✅ " + tr("settings_gemini_key_valid"))
+                    self.gemini_status_label.setStyleSheet("color: #4caf50;")
+                    QMessageBox.information(self, tr("dialog_info"), tr("settings_gemini_key_valid"))
+                else:
+                    raise Exception("Invalid response")
+
+        except urllib.error.HTTPError as e:
+            if e.code == 400:
+                self.gemini_status_label.setText("❌ " + tr("settings_gemini_invalid_key"))
+            elif e.code == 403:
+                self.gemini_status_label.setText("❌ " + tr("settings_gemini_key_forbidden"))
+            else:
+                self.gemini_status_label.setText(f"❌ HTTP {e.code}")
+            self.gemini_status_label.setStyleSheet("color: #f44336;")
+            QMessageBox.critical(self, tr("dialog_error"), f"API Error: {e}")
+
+        except Exception as e:
+            self.gemini_status_label.setText(f"❌ {str(e)[:30]}")
+            self.gemini_status_label.setStyleSheet("color: #f44336;")
+            QMessageBox.critical(self, tr("dialog_error"), str(e))
+
+        finally:
+            self.test_key_btn.setEnabled(True)

@@ -143,6 +143,21 @@ TRANSLATIONS = {
         "settings_whisper_device_auto": "Auto (GPU if available)",
         "settings_whisper_device_cpu": "CPU",
         "settings_whisper_device_gpu": "GPU (CUDA)",
+
+        # Gemini Settings
+        "settings_gemini_enabled": "Use Gemini for Transcription",
+        "settings_gemini_api_key": "API Key",
+        "settings_gemini_model": "Model",
+        "settings_show_key": "Show",
+        "settings_hide_key": "Hide",
+        "settings_test_key": "Test Key",
+        "settings_gemini_disabled": "Gemini disabled, using Whisper",
+        "settings_gemini_no_key": "Please enter API key",
+        "settings_gemini_key_set": "API key configured",
+        "settings_gemini_invalid_key": "Invalid API key format",
+        "settings_gemini_testing": "Testing API key...",
+        "settings_gemini_key_valid": "API key is valid!",
+        "settings_gemini_key_forbidden": "API key forbidden",
         "settings_default_export": "Default export format",
         "settings_restart_required": "Restart required for changes to take effect",
 
@@ -340,6 +355,21 @@ TRANSLATIONS = {
         "settings_whisper_device_auto": "Otomatik (varsa GPU)",
         "settings_whisper_device_cpu": "CPU",
         "settings_whisper_device_gpu": "GPU (CUDA)",
+
+        # Gemini Ayarları
+        "settings_gemini_enabled": "Transkripsiyon için Gemini Kullan",
+        "settings_gemini_api_key": "API Anahtarı",
+        "settings_gemini_model": "Model",
+        "settings_show_key": "Göster",
+        "settings_hide_key": "Gizle",
+        "settings_test_key": "Test Et",
+        "settings_gemini_disabled": "Gemini devre dışı, Whisper kullanılıyor",
+        "settings_gemini_no_key": "Lütfen API anahtarı girin",
+        "settings_gemini_key_set": "API anahtarı ayarlandı",
+        "settings_gemini_invalid_key": "Geçersiz API anahtarı formatı",
+        "settings_gemini_testing": "API anahtarı test ediliyor...",
+        "settings_gemini_key_valid": "API anahtarı geçerli!",
+        "settings_gemini_key_forbidden": "API anahtarı yetkisiz",
         "settings_default_export": "Varsayılan dışa aktarma formatı",
         "settings_restart_required": "Değişikliklerin geçerli olması için yeniden başlatma gerekli",
 

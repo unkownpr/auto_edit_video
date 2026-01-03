@@ -1499,6 +1499,51 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("dialog_warning"), tr("error_no_audio"))
             return
 
+        # Check if Gemini is enabled
+        use_gemini = self.settings.gemini_enabled and self.settings.gemini_api_key
+
+        if use_gemini:
+            # Use Gemini for transcription
+            self._run_gemini_transcription(media)
+        else:
+            # Use Whisper for transcription
+            self._run_whisper_transcription(media)
+
+    def _run_gemini_transcription(self, media):
+        """Gemini ile transkripsiyon."""
+        self._show_progress_dialog(tr("progress_transcribing"), tr("btn_cancel"))
+
+        def do_work(progress_callback):
+            from app.transcript.transcriber import transcribe_with_gemini
+
+            progress_callback(5, "Gemini API'ye bağlanılıyor...")
+            return transcribe_with_gemini(
+                media.audio_path,
+                api_key=self.settings.gemini_api_key,
+                model=self.settings.gemini_model,
+                progress_callback=lambda p, msg: progress_callback(int(p), msg),
+            )
+
+        def on_complete(segments):
+            self._close_progress_dialog()
+            self.project.transcript_segments = segments
+            self.transcript_list.clear()
+            for seg in segments:
+                self.transcript_list.addItem(f"[{self._format_time(seg.start)}] {seg.text}")
+            self.statusbar.showMessage(f"Gemini: {len(segments)} segment transkript edildi")
+
+        def on_error(error):
+            self._close_progress_dialog()
+            QMessageBox.critical(self, tr("dialog_error"), f"Gemini Error: {error}")
+
+        worker = Worker(do_work)
+        worker.signals.progress.connect(self._update_progress, Qt.QueuedConnection)
+        worker.signals.result.connect(on_complete, Qt.QueuedConnection)
+        worker.signals.error.connect(on_error, Qt.QueuedConnection)
+        self._start_worker(worker)
+
+    def _run_whisper_transcription(self, media):
+        """Whisper ile transkripsiyon."""
         # Model seçim dialogu
         dialog = QDialog(self)
         dialog.setWindowTitle(tr("transcription_title"))

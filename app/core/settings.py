@@ -145,6 +145,11 @@ class Settings:
     gpu_acceleration: bool = True
     transcript_beam_size: int = 1  # 1=fastest, 5=more accurate
 
+    # Gemini API (for transcription)
+    gemini_api_key: str = ""
+    gemini_enabled: bool = False
+    gemini_model: str = "gemini-2.0-flash-exp"  # or gemini-1.5-pro, gemini-1.5-flash
+
     # Export
     default_export_format: str = "fcpxml"  # fcpxml, edl, xmeml
     fcpxml_version: str = "1.10"
@@ -231,6 +236,9 @@ class Settings:
             "default_transcript_model": self.default_transcript_model,
             "transcript_language": self.transcript_language,
             "gpu_acceleration": self.gpu_acceleration,
+            "gemini_api_key": self.gemini_api_key,
+            "gemini_enabled": self.gemini_enabled,
+            "gemini_model": self.gemini_model,
             "default_export_format": self.default_export_format,
             "fcpxml_version": self.fcpxml_version,
             "include_disabled_cuts": self.include_disabled_cuts,
@@ -262,9 +270,12 @@ class Settings:
                 proxy_resolution=data.get("proxy_resolution", "720p"),
                 waveform_samples_per_pixel=data.get("waveform_samples_per_pixel", 256),
                 max_waveform_cache_mb=data.get("max_waveform_cache_mb", 500),
-                default_transcript_model=data.get("default_transcript_model", "faster-whisper-medium"),
+                default_transcript_model=data.get("default_transcript_model", "faster-whisper-base"),
                 transcript_language=data.get("transcript_language", "auto"),
                 gpu_acceleration=data.get("gpu_acceleration", True),
+                gemini_api_key=data.get("gemini_api_key", ""),
+                gemini_enabled=data.get("gemini_enabled", False),
+                gemini_model=data.get("gemini_model", "gemini-2.0-flash-exp"),
                 default_export_format=data.get("default_export_format", "fcpxml"),
                 fcpxml_version=data.get("fcpxml_version", "1.10"),
                 include_disabled_cuts=data.get("include_disabled_cuts", False),

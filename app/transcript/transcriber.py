@@ -1,9 +1,10 @@
 """
-Audio transcription using Whisper.
+Audio transcription using Whisper or Gemini.
 
 Supports:
 - faster-whisper (recommended, CPU/GPU)
 - openai-whisper (GPU)
+- Gemini API (cloud-based)
 
 Features:
 - Segment-level timestamps
@@ -14,6 +15,12 @@ Features:
 
 from __future__ import annotations
 
+import json
+import re
+import urllib.request
+import urllib.error
+import base64
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable, Literal
@@ -391,4 +398,210 @@ def transcribe_audio(
         TranscriptSegment listesi
     """
     transcriber = Transcriber(config)
+    return transcriber.transcribe(audio_path, progress_callback)
+
+
+# =============================================================================
+# Gemini Transcriber
+# =============================================================================
+
+@dataclass
+class GeminiConfig:
+    """Gemini transcription configuration."""
+    api_key: str
+    model: str = "gemini-2.0-flash-exp"
+    language: Optional[str] = None  # None = auto-detect
+
+
+class GeminiTranscriber:
+    """
+    Gemini API kullanarak audio transcription.
+
+    Usage:
+        transcriber = GeminiTranscriber(api_key, model)
+        segments = transcriber.transcribe(audio_path, progress_callback)
+    """
+
+    def __init__(self, config: GeminiConfig):
+        self.config = config
+
+    def transcribe(
+        self,
+        audio_path: Path,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+    ) -> list[TranscriptSegment]:
+        """
+        Audio dosyasını Gemini ile transkript et.
+
+        Args:
+            audio_path: Audio dosya yolu (WAV, MP3, etc.)
+            progress_callback: İlerleme callback'i
+
+        Returns:
+            TranscriptSegment listesi
+        """
+        if progress_callback:
+            progress_callback(10, "Preparing audio for Gemini...")
+
+        # Read and encode audio file
+        audio_data = audio_path.read_bytes()
+        audio_base64 = base64.standard_b64encode(audio_data).decode('utf-8')
+
+        # Determine MIME type
+        suffix = audio_path.suffix.lower()
+        mime_types = {
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mp3',
+            '.m4a': 'audio/mp4',
+            '.aac': 'audio/aac',
+            '.ogg': 'audio/ogg',
+            '.flac': 'audio/flac',
+        }
+        mime_type = mime_types.get(suffix, 'audio/wav')
+
+        if progress_callback:
+            progress_callback(20, "Sending to Gemini API...")
+
+        # Prepare the prompt for transcription with timestamps
+        language_hint = f" The audio is in {self.config.language}." if self.config.language else ""
+        prompt = f"""Transcribe this audio file accurately.{language_hint}
+
+Return the transcription in JSON format with timestamps:
+{{
+  "language": "detected language code (e.g., en, tr)",
+  "segments": [
+    {{"start": 0.0, "end": 2.5, "text": "First sentence here."}},
+    {{"start": 2.5, "end": 5.0, "text": "Second sentence here."}}
+  ]
+}}
+
+Rules:
+- Use accurate timestamps in seconds
+- Each segment should be a complete sentence or phrase
+- Preserve the original language
+- Include punctuation
+- Return ONLY the JSON, no other text"""
+
+        # Build API request
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.config.model}:generateContent?key={self.config.api_key}"
+
+        request_data = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": audio_base64
+                        }
+                    }
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.1,  # Low temperature for accurate transcription
+                "maxOutputTokens": 8192,
+            }
+        }
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(request_data).encode('utf-8'),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+
+            if progress_callback:
+                progress_callback(40, "Waiting for Gemini response...")
+
+            with urllib.request.urlopen(req, timeout=300) as response:
+                result = json.loads(response.read().decode('utf-8'))
+
+            if progress_callback:
+                progress_callback(80, "Processing transcription...")
+
+            # Extract text from response
+            if "candidates" not in result or not result["candidates"]:
+                raise ValueError("No response from Gemini API")
+
+            response_text = result["candidates"][0]["content"]["parts"][0]["text"]
+
+            # Parse JSON from response
+            segments = self._parse_response(response_text)
+
+            if progress_callback:
+                progress_callback(100, "Transcription complete")
+
+            logger.info(f"Gemini transcribed {len(segments)} segments")
+            return segments
+
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8') if e.fp else str(e)
+            logger.error(f"Gemini API error: {e.code} - {error_body}")
+            raise RuntimeError(f"Gemini API error: {e.code}")
+
+        except Exception as e:
+            logger.error(f"Gemini transcription error: {e}")
+            raise
+
+    def _parse_response(self, response_text: str) -> list[TranscriptSegment]:
+        """Parse Gemini response to TranscriptSegment list."""
+        # Try to extract JSON from response
+        # Sometimes the response has markdown code blocks
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response_text)
+        if json_match:
+            json_text = json_match.group(1)
+        else:
+            # Try to find raw JSON
+            json_text = response_text.strip()
+
+        try:
+            data = json.loads(json_text)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, create a single segment with the text
+            logger.warning("Failed to parse Gemini response as JSON, using raw text")
+            return [TranscriptSegment(
+                text=response_text.strip(),
+                start=0.0,
+                end=0.0,
+                language="unknown",
+            )]
+
+        language = data.get("language", "unknown")
+        segments = []
+
+        for seg_data in data.get("segments", []):
+            segment = TranscriptSegment(
+                text=seg_data.get("text", "").strip(),
+                start=float(seg_data.get("start", 0)),
+                end=float(seg_data.get("end", 0)),
+                language=language,
+            )
+            segments.append(segment)
+
+        return segments
+
+
+def transcribe_with_gemini(
+    audio_path: Path,
+    api_key: str,
+    model: str = "gemini-2.0-flash-exp",
+    language: Optional[str] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+) -> list[TranscriptSegment]:
+    """
+    Convenience function for Gemini transcription.
+
+    Args:
+        audio_path: Audio dosya yolu
+        api_key: Gemini API key
+        model: Gemini model name
+        language: Language hint (optional)
+        progress_callback: İlerleme callback'i
+
+    Returns:
+        TranscriptSegment listesi
+    """
+    config = GeminiConfig(api_key=api_key, model=model, language=language)
+    transcriber = GeminiTranscriber(config)
     return transcriber.transcribe(audio_path, progress_callback)
