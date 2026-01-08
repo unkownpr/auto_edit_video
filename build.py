@@ -68,9 +68,37 @@ def check_dependencies():
         sys.exit(1)
 
 
+def find_ffmpeg_binaries() -> list:
+    """FFmpeg binary'lerini bul ve --add-binary argümanları oluştur."""
+    import shutil
+
+    binaries = []
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
+
+    if ffmpeg_path:
+        # Symlink ise gerçek yolu bul
+        ffmpeg_real = os.path.realpath(ffmpeg_path)
+        binaries.extend(["--add-binary", f"{ffmpeg_real}{os.pathsep}bin"])
+        print(f"   📦 FFmpeg: {ffmpeg_real}")
+
+    if ffprobe_path:
+        ffprobe_real = os.path.realpath(ffprobe_path)
+        binaries.extend(["--add-binary", f"{ffprobe_real}{os.pathsep}bin"])
+        print(f"   📦 FFprobe: {ffprobe_real}")
+
+    if not binaries:
+        print("   ⚠️  FFmpeg bulunamadı, bundle'a dahil edilmeyecek")
+
+    return binaries
+
+
 def get_platform_args() -> list:
     """Platform'a özel PyInstaller argümanları."""
     system = platform.system()
+
+    # FFmpeg binary'lerini bul
+    ffmpeg_binaries = find_ffmpeg_binaries()
 
     common_args = [
         "--name", APP_NAME,
@@ -86,7 +114,7 @@ def get_platform_args() -> list:
         "--hidden-import", "lxml",
         # Data files
         "--add-data", f"app/ui/styles{os.pathsep}app/ui/styles",
-    ]
+    ] + ffmpeg_binaries
 
     if system == "Darwin":  # macOS
         return common_args + [

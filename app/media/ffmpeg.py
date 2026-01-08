@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import subprocess
 import shutil
+import sys
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable
@@ -20,6 +22,45 @@ import logging
 from app.core.models import MediaInfo
 
 logger = logging.getLogger(__name__)
+
+
+def get_bundle_bin_path() -> Optional[Path]:
+    """Get the path to bundled binaries (for PyInstaller builds)."""
+    if getattr(sys, 'frozen', False):
+        # Running as bundled app
+        bundle_dir = Path(sys._MEIPASS)
+        bin_path = bundle_dir / "bin"
+        if bin_path.exists():
+            return bin_path
+    return None
+
+
+def find_ffmpeg() -> Optional[str]:
+    """Find ffmpeg binary, checking bundle first."""
+    # Check bundle first
+    bundle_bin = get_bundle_bin_path()
+    if bundle_bin:
+        ffmpeg_path = bundle_bin / "ffmpeg"
+        if ffmpeg_path.exists() and os.access(ffmpeg_path, os.X_OK):
+            logger.info(f"Using bundled ffmpeg: {ffmpeg_path}")
+            return str(ffmpeg_path)
+
+    # Fall back to system PATH
+    return shutil.which("ffmpeg")
+
+
+def find_ffprobe() -> Optional[str]:
+    """Find ffprobe binary, checking bundle first."""
+    # Check bundle first
+    bundle_bin = get_bundle_bin_path()
+    if bundle_bin:
+        ffprobe_path = bundle_bin / "ffprobe"
+        if ffprobe_path.exists() and os.access(ffprobe_path, os.X_OK):
+            logger.info(f"Using bundled ffprobe: {ffprobe_path}")
+            return str(ffprobe_path)
+
+    # Fall back to system PATH
+    return shutil.which("ffprobe")
 
 
 class FFmpegError(Exception):
@@ -39,9 +80,9 @@ class FFmpegWrapper:
     ffprobe_path: str = "ffprobe"
 
     def __post_init__(self):
-        # Binary'leri kontrol et
-        self._ffmpeg = shutil.which(self.ffmpeg_path)
-        self._ffprobe = shutil.which(self.ffprobe_path)
+        # Binary'leri kontrol et - önce bundle, sonra sistem PATH
+        self._ffmpeg = find_ffmpeg() or shutil.which(self.ffmpeg_path)
+        self._ffprobe = find_ffprobe() or shutil.which(self.ffprobe_path)
 
         if not self._ffmpeg:
             raise FFmpegNotFoundError(
@@ -53,6 +94,9 @@ class FFmpegWrapper:
                 f"FFprobe not found: {self.ffprobe_path}. "
                 "Please install FFmpeg and ensure it's in your PATH."
             )
+
+        logger.info(f"FFmpeg: {self._ffmpeg}")
+        logger.info(f"FFprobe: {self._ffprobe}")
 
     def probe(self, file_path: Path) -> MediaInfo:
         """
