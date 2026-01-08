@@ -182,13 +182,73 @@ class MainWindow(QMainWindow):
             return False
 
     def _show_ffmpeg_warning(self):
-        """FFmpeg uyarısını göster."""
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle(tr("dialog_warning"))
-        msg.setText(tr("error_ffmpeg_not_found"))
-        msg.setInformativeText(tr("error_ffmpeg_install"))
-        msg.exec()
+        """FFmpeg uyarısını göster ve macOS'ta otomatik kurulum seçeneği sun."""
+        import sys
+        from app.media.ffmpeg_installer import is_homebrew_installed, install_ffmpeg_via_homebrew, get_ffmpeg_install_instructions
+
+        if sys.platform == "darwin" and is_homebrew_installed():
+            # macOS + Homebrew: Otomatik kurulum seçeneği sun
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle(tr("dialog_warning"))
+            msg.setText(tr("error_ffmpeg_not_found"))
+            msg.setInformativeText(tr("ffmpeg_install_prompt"))
+
+            install_btn = msg.addButton(tr("btn_install_ffmpeg"), QMessageBox.AcceptRole)
+            msg.addButton(tr("btn_cancel"), QMessageBox.RejectRole)
+
+            msg.exec()
+
+            if msg.clickedButton() == install_btn:
+                self._install_ffmpeg()
+        else:
+            # Diğer platformlar: Manuel kurulum talimatları göster
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle(tr("dialog_warning"))
+            msg.setText(tr("error_ffmpeg_not_found"))
+            msg.setInformativeText(get_ffmpeg_install_instructions())
+            msg.exec()
+
+    def _install_ffmpeg(self):
+        """FFmpeg'i Homebrew ile kur."""
+        from app.media.ffmpeg_installer import install_ffmpeg_via_homebrew
+
+        self._show_progress_dialog(tr("ffmpeg_installing"), tr("btn_cancel"))
+
+        def do_work(progress_callback):
+            success, message = install_ffmpeg_via_homebrew(
+                lambda p, msg: progress_callback(p, msg)
+            )
+            return success, message
+
+        def on_complete(result):
+            self._close_progress_dialog()
+            success, message = result
+
+            if success:
+                self._ffmpeg_available = True
+                QMessageBox.information(
+                    self,
+                    tr("dialog_info"),
+                    tr("ffmpeg_install_success")
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    tr("dialog_error"),
+                    message
+                )
+
+        def on_error(error):
+            self._close_progress_dialog()
+            QMessageBox.critical(self, tr("dialog_error"), str(error))
+
+        worker = Worker(do_work)
+        worker.signals.progress.connect(self._update_progress, Qt.QueuedConnection)
+        worker.signals.result.connect(on_complete, Qt.QueuedConnection)
+        worker.signals.error.connect(on_error, Qt.QueuedConnection)
+        self._start_worker(worker)
 
     @Slot(int, str)
     def _update_progress(self, value: int, message: str):

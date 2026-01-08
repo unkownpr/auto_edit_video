@@ -289,6 +289,12 @@ TRANSLATIONS = {
         "transcription_downloaded": "Downloaded",
         "transcription_will_download": "Will download on first use",
         "transcription_speed_hint": "Speed calculated for CPU. GPU is much faster if available.",
+
+        # FFmpeg Installer
+        "ffmpeg_install_prompt": "FFmpeg is not installed. Would you like to install it automatically via Homebrew?",
+        "btn_install_ffmpeg": "Install FFmpeg",
+        "ffmpeg_installing": "Installing FFmpeg...",
+        "ffmpeg_install_success": "FFmpeg installed successfully! You can now use all features.",
     },
 
     "tr": {
@@ -563,6 +569,12 @@ TRANSLATIONS = {
         "transcription_downloaded": "İndirilmiş",
         "transcription_will_download": "İlk kullanımda indirilecek",
         "transcription_speed_hint": "Hız CPU için hesaplanmıştır. GPU varsa çok daha hızlı olur.",
+
+        # FFmpeg Installer
+        "ffmpeg_install_prompt": "FFmpeg kurulu değil. Homebrew ile otomatik kurmak ister misiniz?",
+        "btn_install_ffmpeg": "FFmpeg Kur",
+        "ffmpeg_installing": "FFmpeg kuruluyor...",
+        "ffmpeg_install_success": "FFmpeg başarıyla kuruldu! Artık tüm özellikleri kullanabilirsiniz.",
     },
 }
 

@@ -91,8 +91,7 @@ def get_platform_args() -> list:
     if system == "Darwin":  # macOS
         return common_args + [
             "--osx-bundle-identifier", APP_BUNDLE_ID,
-            # macOS için ikon (varsa)
-            # "--icon", "resources/icon.icns",
+            "--icon", "resources/icon.icns",
         ]
 
     elif system == "Windows":
@@ -223,8 +222,8 @@ import os
 application = "dist/{APP_NAME}.app"
 appname = os.path.basename(application)
 
-def icon_from_app(app_path):
-    return os.path.join(app_path, "Contents", "Resources", "AutoCut.icns")
+# Volume icon - uses the app icon
+badge_icon = "resources/icon.icns"
 
 # Volume ayarları
 volume_name = "{APP_NAME} {APP_VERSION}"
