@@ -10,6 +10,7 @@ scipy>=1.11.0
 
 # Media Processing
 ffmpeg-python>=0.2.0
+static-ffmpeg>=2.5  # Static FFmpeg binaries for bundled apps
 
 # Video Frame Extraction (for preview)
 opencv-python-headless>=4.8.0

@@ -69,23 +69,63 @@ def check_dependencies():
 
 
 def find_ffmpeg_binaries() -> list:
-    """FFmpeg binary'lerini bul ve --add-binary argümanları oluştur."""
-    import shutil
+    """FFmpeg binary'lerini bul ve --add-binary argümanları oluştur.
 
+    Önce static-ffmpeg paketini kontrol eder (static binary, bağımlılık yok),
+    bulamazsa sistem FFmpeg'ini kullanır.
+    """
     binaries = []
+
+    # Önce static-ffmpeg paketini dene (tercih edilen - static binary)
+    try:
+        import static_ffmpeg
+        static_ffmpeg.add_paths()
+
+        # static-ffmpeg binary konumunu bul
+        import importlib.util
+        spec = importlib.util.find_spec("static_ffmpeg")
+        if spec and spec.origin:
+            static_bin_dir = Path(spec.origin).parent / "bin"
+
+            # Platform'a göre klasör
+            if platform.system() == "Darwin":
+                platform_dir = static_bin_dir / "darwin"
+            elif platform.system() == "Windows":
+                platform_dir = static_bin_dir / "win32"
+            else:
+                platform_dir = static_bin_dir / "linux"
+
+            ffmpeg_static = platform_dir / "ffmpeg"
+            ffprobe_static = platform_dir / "ffprobe"
+
+            if ffmpeg_static.exists():
+                binaries.extend(["--add-binary", f"{ffmpeg_static}{os.pathsep}bin"])
+                print(f"   📦 FFmpeg (static): {ffmpeg_static}")
+
+            if ffprobe_static.exists():
+                binaries.extend(["--add-binary", f"{ffprobe_static}{os.pathsep}bin"])
+                print(f"   📦 FFprobe (static): {ffprobe_static}")
+
+            if binaries:
+                return binaries
+
+    except ImportError:
+        print("   ℹ️  static-ffmpeg paketi bulunamadı, sistem FFmpeg'i aranıyor...")
+
+    # Fallback: Sistem FFmpeg'i (Homebrew vb.)
+    import shutil
     ffmpeg_path = shutil.which("ffmpeg")
     ffprobe_path = shutil.which("ffprobe")
 
     if ffmpeg_path:
-        # Symlink ise gerçek yolu bul
         ffmpeg_real = os.path.realpath(ffmpeg_path)
         binaries.extend(["--add-binary", f"{ffmpeg_real}{os.pathsep}bin"])
-        print(f"   📦 FFmpeg: {ffmpeg_real}")
+        print(f"   📦 FFmpeg (system): {ffmpeg_real}")
 
     if ffprobe_path:
         ffprobe_real = os.path.realpath(ffprobe_path)
         binaries.extend(["--add-binary", f"{ffprobe_real}{os.pathsep}bin"])
-        print(f"   📦 FFprobe: {ffprobe_real}")
+        print(f"   📦 FFprobe (system): {ffprobe_real}")
 
     if not binaries:
         print("   ⚠️  FFmpeg bulunamadı, bundle'a dahil edilmeyecek")

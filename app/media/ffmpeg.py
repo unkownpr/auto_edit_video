@@ -35,9 +35,32 @@ def get_bundle_bin_path() -> Optional[Path]:
     return None
 
 
+def get_static_ffmpeg_path() -> Optional[Path]:
+    """Get path to static-ffmpeg package binaries."""
+    try:
+        import static_ffmpeg
+        import importlib.util
+        import platform as plat
+
+        spec = importlib.util.find_spec("static_ffmpeg")
+        if spec and spec.origin:
+            static_bin_dir = Path(spec.origin).parent / "bin"
+
+            # Platform'a göre klasör
+            if plat.system() == "Darwin":
+                return static_bin_dir / "darwin"
+            elif plat.system() == "Windows":
+                return static_bin_dir / "win32"
+            else:
+                return static_bin_dir / "linux"
+    except ImportError:
+        pass
+    return None
+
+
 def find_ffmpeg() -> Optional[str]:
-    """Find ffmpeg binary, checking bundle first."""
-    # Check bundle first
+    """Find ffmpeg binary, checking bundle first, then static-ffmpeg, then system."""
+    # 1. Check bundle first (PyInstaller)
     bundle_bin = get_bundle_bin_path()
     if bundle_bin:
         ffmpeg_path = bundle_bin / "ffmpeg"
@@ -45,13 +68,21 @@ def find_ffmpeg() -> Optional[str]:
             logger.info(f"Using bundled ffmpeg: {ffmpeg_path}")
             return str(ffmpeg_path)
 
-    # Fall back to system PATH
+    # 2. Check static-ffmpeg package
+    static_bin = get_static_ffmpeg_path()
+    if static_bin:
+        ffmpeg_path = static_bin / "ffmpeg"
+        if ffmpeg_path.exists() and os.access(ffmpeg_path, os.X_OK):
+            logger.info(f"Using static-ffmpeg: {ffmpeg_path}")
+            return str(ffmpeg_path)
+
+    # 3. Fall back to system PATH
     return shutil.which("ffmpeg")
 
 
 def find_ffprobe() -> Optional[str]:
-    """Find ffprobe binary, checking bundle first."""
-    # Check bundle first
+    """Find ffprobe binary, checking bundle first, then static-ffmpeg, then system."""
+    # 1. Check bundle first (PyInstaller)
     bundle_bin = get_bundle_bin_path()
     if bundle_bin:
         ffprobe_path = bundle_bin / "ffprobe"
@@ -59,7 +90,15 @@ def find_ffprobe() -> Optional[str]:
             logger.info(f"Using bundled ffprobe: {ffprobe_path}")
             return str(ffprobe_path)
 
-    # Fall back to system PATH
+    # 2. Check static-ffmpeg package
+    static_bin = get_static_ffmpeg_path()
+    if static_bin:
+        ffprobe_path = static_bin / "ffprobe"
+        if ffprobe_path.exists() and os.access(ffprobe_path, os.X_OK):
+            logger.info(f"Using static-ffprobe: {ffprobe_path}")
+            return str(ffprobe_path)
+
+    # 3. Fall back to system PATH
     return shutil.which("ffprobe")
 
 
